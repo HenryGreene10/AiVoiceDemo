@@ -12,6 +12,7 @@ import trafilatura, re, requests as http
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 from fastapi.staticfiles import StaticFiles
+from fastapi import Query
 
 # --- config / env
 load_dotenv(".env")
@@ -21,6 +22,8 @@ VOICE_ID = "EQu48Nbp4OqDxsnYh27f"  # your default voice
 MODEL_ID = "eleven_turbo_v2"
 CACHE_DIR = Path("cache")
 CACHE_DIR.mkdir(exist_ok=True)
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
+MAX_CHARS = 1600  # ~90 seconds
 
 # --- app
 app = FastAPI()
@@ -126,6 +129,7 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
     """Stream audio; write to disk cache; return StreamingResponse."""
     client: httpx.AsyncClient = app.state.http_client
     h = tts_hash(text, voice_id, model_id)
+    print({"event":"hash_debug","hash":h,"text_head":text[:80]})
     p = cache_path(h)
 
     # memory cache
@@ -174,6 +178,7 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
             nonlocal first_chunk_time, total_bytes
             try:
                 with tmp_path.open("wb") as f:
+                    print({"event": "tts_api_call", "hash": h, "model": model_id})
                     async with client.stream("POST", url, headers=headers, json=payload) as resp:
                         if resp.status_code != 200:
                             err = await resp.aread()
@@ -203,6 +208,18 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
                         print({"event":"cache_finalize_error","err":str(e)})
 
         return StreamingResponse(gen(), media_type="audio/mpeg")
+    
+    # Memory cache
+    if h in cache:
+        print({"event": "cache_hit_mem", "hash": h})
+        return Response(content=cache[h], media_type="audio/mpeg")
+
+    # Disk cache
+    if p.exists():
+        print({"event": "cache_hit_disk", "hash": h, "bytes": p.stat().st_size})
+        data = p.read_bytes()
+        cache.put(h, data)
+        return Response(content=data, media_type="audio/mpeg")
 
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
@@ -216,8 +233,8 @@ async def tts(req: TTSRequest):
 
 # --- TTS GET for direct <audio src>
 @app.get("/tts")
-async def tts_get(text: str = Query("", min_length=0)):
-    return await stream_tts_for_text(text or "Hello", voice_id=VOICE_ID, model_id=MODEL_ID)
+async def tts_get(text: str = Query("", min_length=0), model: str = Query(MODEL_ID)):
+    return await stream_tts_for_text(text or "Hello", voice_id=VOICE_ID, model_id=model)
 
 # --- extract
 @app.get("/extract")
@@ -260,30 +277,72 @@ class ReadRequest(BaseModel):
     text: str | None = None
 
 # --- read
+# ---- READ: fetch article → extract → prosody → stream (cached) ----
 @app.post("/read")
 async def read(req: ReadRequest):
     if not (req.text or req.url):
         raise HTTPException(400, "Provide 'text' or 'url'")
+
     if req.url:
         if not is_public_http_url(req.url):
             raise HTTPException(400, "Invalid URL")
-        r = http.get(req.url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
+
+        r = http.get(req.url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (ReaderBot)"})
         if r.status_code != 200 or not r.text:
             raise HTTPException(502, "Fetch failed")
-        extracted = trafilatura.extract(r.text, include_comments=False, include_tables=False,
-                                favor_precision=True)
+
+        extracted = trafilatura.extract(
+            r.text, include_comments=False, include_tables=False, favor_precision=True
+        )
         if not extracted:
             raise HTTPException(422, "No article content found")
 
-        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I|re.S)
+        # title from HTML <title> (simple fallback)
+        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I | re.S)
+        title = (m.group(1).strip() if m else "")
+        body = extracted.strip()
+        text = prosody(title, body)
+    else:
+        text = prosody("", (req.text or ""))
+
+    # Demo cap for full reads
+    if DEMO_MODE:
+        text = text[:MAX_CHARS]
+    # Use the shared cached streamer (disk + memory). This saves credits.
+    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID)
+
+# GET /read — used by the inline <audio> player
+@app.get("/read")
+async def read_get(url: str | None = Query(None, min_length=8), text: str | None = None):
+    if not (url or text):
+        raise HTTPException(400, "Provide 'text' or 'url'")
+
+    if url:
+        if not is_public_http_url(url):
+            raise HTTPException(400, "Invalid URL")
+
+        r = http.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
+        if r.status_code != 200 or not r.text:
+            raise HTTPException(502, "Fetch failed")
+
+        extracted = trafilatura.extract(
+            r.text, include_comments=False, include_tables=False, favor_precision=True
+        )
+        if not extracted:
+            raise HTTPException(422, "No article content found")
+
+        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I | re.S)
         title = (m.group(1).strip() if m else "")
         body  = extracted.strip()
-
-        text  = prosody(title, body)
+        text_final = prosody(title, body)
     else:
-        text = prosody("", req.text)
+        text_final = prosody("", text or "")
 
-    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID)
+    # Demo cap for full reads
+    if DEMO_MODE:
+        text_final = text_final[:MAX_CHARS]
+    return await stream_tts_for_text(text_final, voice_id=VOICE_ID, model_id=MODEL_ID)
+
 
 def _split_text_for_tts(t: str, target: int = 2200) -> list[str]:
     # Greedy paragraph-based splitting with sentence hints
@@ -335,44 +394,4 @@ async def read_get(url: str | None = None, text: str | None = None):
         text  = prosody(title, body)
     else:
         text = prosody("", text or "")
-
-    chunks = _split_text_for_tts(text)
-    client: httpx.AsyncClient = app.state.http_client
-    url_api = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/stream"
-    headers = {
-        "xi-api-key": API_KEY,
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-    }
-
-    voice_payload_common = {
-        "model_id": "eleven_turbo_v2",
-        "voice_settings": {
-            "stability": 0.35,
-            "similarity_boost": 0.9,
-            "style": 0.35,
-            "use_speaker_boost": True,
-        },
-        "optimize_streaming_latency": 2,
-    }
-
-    async def stream_all():
-        total_bytes = 0
-        try:
-            for idx, piece in enumerate(chunks):
-                payload = dict(voice_payload_common)
-                payload["text"] = piece
-                async with client.stream("POST", url_api, headers=headers, json=payload) as resp:
-                    if resp.status_code != 200:
-                        err = await resp.aread()
-                        raise HTTPException(status_code=resp.status_code, detail=err[:200].decode(errors="ignore"))
-                    async for chunk in resp.aiter_bytes(chunk_size=4096):
-                        if not chunk:
-                            continue
-                        total_bytes += len(chunk)
-                        yield chunk
-        finally:
-            print({"event":"read_stream","chunks":len(chunks),"total_bytes":total_bytes})
-
-    return StreamingResponse(stream_all(), media_type="audio/mpeg")
 

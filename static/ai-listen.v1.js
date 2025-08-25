@@ -2,7 +2,7 @@
     if (window.__aiListenLoaded) return; window.__aiListenLoaded = true;
 
     // inject button
-    const btn = Object.assign(document.createElement('button'), { textContent: '▶ Listen' });
+    const btn = Object.assign(document.createElement('button'), { textContent: 'Listen (click = preview, Shift = full)' });
     Object.assign(btn.style, {position:'fixed',right:'16px',bottom:'16px',zIndex:999999,
       padding:'12px 16px',borderRadius:'12px',border:'0',fontWeight:'700',
       background:'#3b82f6',color:'#fff',boxShadow:'0 6px 20px rgba(0,0,0,.2)',cursor:'pointer'});
@@ -23,25 +23,46 @@
       return parts.join('\n\n').slice(0,15000);
     }
   
-    let audio;
-    async function play(){
-      const text = getText();
-      if (!text || text.split(/\s+/).length < 30) { alert('No readable article text found'); return; }
-      btn.disabled = true; btn.textContent = '… loading';
-      try{
-        const u = new URL('http://127.0.0.1:3000/tts');
-        u.searchParams.set('text', text);
-        audio = new Audio(u.toString());
-        audio.onended = () => { btn.textContent='▶ Listen'; };
-        await audio.play();
-        btn.textContent = '⏸ Pause';
-      }catch(e){ alert(e.message); btn.textContent='▶ Listen'; }
-      finally{ btn.disabled = false; }
+    function ensureAudio(){
+      let a = document.getElementById('listen-audio');
+      if (!a){
+        a = document.createElement('audio');
+        a.id = 'listen-audio';
+        a.controls = true; a.autoplay = true;
+        a.style.position='fixed'; a.style.right='20px'; a.style.bottom='70px'; a.style.zIndex='2147483647';
+        document.documentElement.appendChild(a);
+      }
+      return a;
     }
-  
-    btn.onclick = async () => {
-      if (audio && !audio.paused){ audio.pause(); btn.textContent='▶ Listen'; }
-      else await play();
-    };
+
+    async function previewClipInline(){
+      const full = getText();
+      if (!full || full.split(/\s+/).length < 30) { alert('No readable article text found'); return; }
+      const clip = full.slice(0, 1100);
+      const a = ensureAudio();
+      const u = new URL('http://127.0.0.1:3000/tts');
+      u.searchParams.set('model', 'eleven_flash_v2');
+      u.searchParams.set('text', clip);
+      a.src = u.toString();
+      try{ await a.play(); }catch{}
+    }
+
+    let busy = false;
+    btn.addEventListener('click', async (e) => {
+      if (busy) return;
+      busy = true; btn.style.opacity = '.7';
+      try{
+        if (!e.shiftKey){
+          await previewClipInline();
+        } else {
+          const a = ensureAudio();
+          a.src = 'http://127.0.0.1:3000/read?url=' + encodeURIComponent(location.href);
+          await a.play();
+        }
+      } finally {
+        btn.style.opacity = '1';
+        setTimeout(()=>{ busy = false; }, 800);
+      }
+    });
   })();
   
