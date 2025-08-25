@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Listen</title>
+<style>
+  body{font-family:system-ui, -apple-system, Segoe UI, Roboto; background:#0b0d10; color:#e8eef5; display:grid; place-items:center; height:100dvh; margin:0}
+  .card{background:#12161c; padding:28px; border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,.25); width:min(680px,90vw)}
+  .title{font-weight:700; font-size:20px; margin:0 0 12px}
+  .row{display:flex; gap:12px; align-items:center}
+  button{background:#3b82f6; color:white; border:0; padding:12px 18px; border-radius:12px; font-weight:700; cursor:pointer}
+  button:disabled{opacity:.6; cursor:not-allowed}
+  .speed{background:#1b2230; color:#cdd6e5; border:1px solid #2a3344; border-radius:10px; padding:10px}
+  .bar{height:8px; background:#1b2230; border-radius:999px; margin-top:14px; overflow:hidden}
+  .bar>div{height:100%; width:0%; background:#22c55e; transition:width .15s}
+  .muted{opacity:.75; font-size:13px; margin-top:10px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 class="title">Listen to this article</h1>
+    <div class="row">
+      <button id="playBtn">▶︎ Play</button>
+      <input id="url" class="speed" placeholder="Paste article URL (optional)" style="flex:1; min-width:220px" />
+      <select id="speed" class="speed">
+        <option value="1" selected>1.0×</option>
+        <option value="1.15">1.15×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+      </select>
+    </div>
+    <div class="bar"><div id="progress"></div></div>
+    <div class="muted" id="status">Ready</div>
+  </div>
+
+<script>
+function grabArticleText() {
+  // 1) obvious targets
+  const candidates = [
+    document.querySelector('article'),
+    document.querySelector('main'),
+    document.querySelector('[role="main"]'),
+    document.querySelector('.post, .post-content, .entry-content, .article-body, .story-body, .content, .container')
+  ].filter(Boolean);
+
+  // 2) score by text length + <p> count
+  let best = null, bestScore = 0;
+  for (const el of candidates) {
+    const text = el.innerText || "";
+    const score = text.length + (el.querySelectorAll('p').length * 300);
+    if (score > bestScore) { best = el; bestScore = score; }
+  }
+
+  // 3) fallback: longest paragraph cluster on the page
+  if (!best) {
+    const blocks = Array.from(document.querySelectorAll('p, div'));
+    for (const b of blocks) {
+      const t = (b.innerText || "").trim();
+      if (t.split(/\s+/).length > 60 && t.length > bestScore) { best = b; bestScore = t.length; }
+    }
+  }
+
+  const text = (best?.innerText || document.body.innerText || "").trim();
+  return text.replace(/\s+\n/g, '\n').slice(0, 15000); // cap for now
+}
+
+function cleanArticleText(root){
+    const allow = root.querySelectorAll('h1,h2,h3,p,li');
+    const bad = new Set(['NAV','FOOTER','ASIDE','BUTTON','INPUT','TEXTAREA','SELECT','SCRIPT','STYLE']);
+    let out=[];
+    allow.forEach(el=>{
+      if (bad.has(el.tagName)) return;
+      if (el.closest('nav,footer,aside,header,[role="button"],.card,.player')) return;
+      if (el.getAttribute('aria-hidden')==='true') return;
+      const t=(el.innerText||'').trim();
+      if (t.length>0) out.push(t);
+    });
+    return out.join('\n\n').slice(0,15000);
+  }
+  
+  // use with your best container:
+  const container = document.querySelector('article, main, [role=main]') || document.body;
+  const text = cleanArticleText(container);
+  
+
+const btn = document.getElementById('playBtn');
+const speedSel = document.getElementById('speed');
+const prog = document.getElementById('progress');
+const statusEl = document.getElementById('status');
+const urlInp = document.getElementById('url');
+let audio;
+
+function setAudioSrcFromPayload(payload){
+  const a = new URL('http://127.0.0.1:3000/tts');
+  if (payload.text) a.searchParams.set('text', payload.text);
+  return a.toString();
+}
+
+function attachProgress(a){
+  a.addEventListener('timeupdate', () => {
+    if (a.duration) prog.style.width = `${(a.currentTime/a.duration)*100}%`;
+  });
+  a.addEventListener('ended', ()=> { btn.textContent='▶︎ Play'; statusEl.textContent='Done'; });
+}
+
+btn.onclick = async () => {
+  try{
+    if (!audio){
+      btn.disabled = true; statusEl.textContent='Loading stream...';
+      const u = (urlInp?.value || '').trim();
+      let src;
+      if (u){
+        // prefer server-side extraction via /read then stream via /tts
+        const rr = await fetch('http://127.0.0.1:3000/read?'+new URLSearchParams({url:u}), { method:'GET' });
+        if (!rr.ok) throw new Error('Read failed');
+        // the /read GET now proxies streaming /tts, so we can set src directly
+        src = rr.url || ('http://127.0.0.1:3000/read?'+new URLSearchParams({url:u}));
+      } else {
+        const text = grabArticleText();
+        if (!text) { statusEl.textContent = 'No article text found'; btn.disabled=false; return; }
+        src = setAudioSrcFromPayload({ text });
+      }
+      audio = new Audio(src);
+      attachProgress(audio);
+      btn.disabled = false;
+    }
+    audio.playbackRate = parseFloat(speedSel.value);
+    if (audio.paused){ audio.play(); btn.textContent='⏸ Pause'; statusEl.textContent='Playing'; }
+    else { audio.pause(); btn.textContent='▶︎ Play'; statusEl.textContent='Paused'; }
+  }catch(e){ statusEl.textContent = 'Error: ' + e.message; btn.disabled=false; }
+};
+
+speedSel.onchange = () => { if (audio) audio.playbackRate = parseFloat(speedSel.value); };
+
+new MutationObserver(() => {
+  if (!window.__articleReady && grabArticleText().length > 400) {
+    window.__articleReady = true;
+    statusEl.textContent = 'Ready';
+  }
+}).observe(document, {subtree:true, childList:true});
+</script>
+</body>
+</html>
