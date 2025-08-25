@@ -184,11 +184,16 @@ def extract(url: str = Query(..., min_length=8)):
         r = http.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
         if r.status_code != 200 or not r.text:
             raise HTTPException(502, "Fetch failed")
-        data = trafilatura.extract(r.text, include_comments=False, include_tables=False, favor_precision=True,  output="json")
-        if not data: raise HTTPException(422, "No article content found")
-        j = trafilatura.utils.json_to_dict(data)
-        title = (j.get("title") or "").strip()
-        text  = (j.get("text") or "").strip()
+        extracted = trafilatura.extract(r.text, include_comments=False, include_tables=False,
+                                favor_precision=True)
+        if not extracted:
+            raise HTTPException(422, "No article content found")
+
+        # simple <title> fallback from the HTML
+        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I|re.S)
+        title = (m.group(1).strip() if m else "")
+        text = extracted.strip()
+
         # basic cleanup
         text = re.sub(r'\n{3,}', '\n\n', text)
         return {"title": title, "text": text[:200000]}  # hard cap
@@ -221,13 +226,15 @@ def read(req: ReadRequest):
         r = http.get(req.url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
         if r.status_code != 200 or not r.text:
             raise HTTPException(502, "Fetch failed")
-        data = trafilatura.extract(r.text, include_comments=False, include_tables=False,
-                                   favor_precision=True, output="json")
-        if not data:
+        extracted = trafilatura.extract(r.text, include_comments=False, include_tables=False,
+                                favor_precision=True)
+        if not extracted:
             raise HTTPException(422, "No article content found")
-        j = trafilatura.utils.json_to_dict(data)
-        title = (j.get("title") or "").strip()
-        body  = (j.get("text") or "").strip()
+
+        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I|re.S)
+        title = (m.group(1).strip() if m else "")
+        body  = extracted.strip()
+
         text  = prosody(title, body)
     else:
         text = prosody("", req.text)
@@ -288,13 +295,15 @@ async def read_get(url: str | None = None, text: str | None = None):
         r = http.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
         if r.status_code != 200 or not r.text:
             raise HTTPException(502, "Fetch failed")
-        data = trafilatura.extract(r.text, include_comments=False, include_tables=False,
-                                   favor_precision=True, output="json")
-        if not data:
+        extracted = trafilatura.extract(r.text, include_comments=False, include_tables=False,
+                                favor_precision=True)
+        if not extracted:
             raise HTTPException(422, "No article content found")
-        j = trafilatura.utils.json_to_dict(data)
-        title = (j.get("title") or "").strip()
-        body  = (j.get("text") or "").strip()
+
+        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I|re.S)
+        title = (m.group(1).strip() if m else "")
+        body  = extracted.strip()
+
         text  = prosody(title, body)
     else:
         text = prosody("", text or "")
