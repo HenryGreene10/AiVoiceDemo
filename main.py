@@ -12,7 +12,6 @@ import trafilatura, re, requests as http
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 from fastapi.staticfiles import StaticFiles
-from fastapi import Query
 
 # --- config / env
 load_dotenv(".env")
@@ -134,9 +133,11 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
 
     # memory cache
     if h in cache:
+        print({"event":"cache_hit_mem","hash":h})
         return Response(content=cache[h], media_type="audio/mpeg")
     # disk cache
     if p.exists():
+        print({"event":"cache_hit_disk","hash":h,"bytes":p.stat().st_size})
         data = p.read_bytes()
         cache.put(h, data)
         return Response(content=data, media_type="audio/mpeg")
@@ -208,18 +209,6 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
                         print({"event":"cache_finalize_error","err":str(e)})
 
         return StreamingResponse(gen(), media_type="audio/mpeg")
-    
-    # Memory cache
-    if h in cache:
-        print({"event": "cache_hit_mem", "hash": h})
-        return Response(content=cache[h], media_type="audio/mpeg")
-
-    # Disk cache
-    if p.exists():
-        print({"event": "cache_hit_disk", "hash": h, "bytes": p.stat().st_size})
-        data = p.read_bytes()
-        cache.put(h, data)
-        return Response(content=data, media_type="audio/mpeg")
 
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
@@ -370,28 +359,4 @@ def _split_text_for_tts(t: str, target: int = 2200) -> list[str]:
             for i in range(0, len(chunk), target):
                 out.append(chunk[i:i+target])
     return out
-
-# --- Read (GET) streaming with chunking for <audio src>
-@app.get("/read")
-async def read_get(url: str | None = None, text: str | None = None):
-    if not (text or url):
-        raise HTTPException(400, "Provide 'text' or 'url'")
-    if url:
-        if not is_public_http_url(url):
-            raise HTTPException(400, "Invalid URL")
-        r = http.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
-        if r.status_code != 200 or not r.text:
-            raise HTTPException(502, "Fetch failed")
-        extracted = trafilatura.extract(r.text, include_comments=False, include_tables=False,
-                                favor_precision=True)
-        if not extracted:
-            raise HTTPException(422, "No article content found")
-
-        m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I|re.S)
-        title = (m.group(1).strip() if m else "")
-        body  = extracted.strip()
-
-        text  = prosody(title, body)
-    else:
-        text = prosody("", text or "")
 

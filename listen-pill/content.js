@@ -1,15 +1,23 @@
 // content.js — inline Listen pill with preview + telemetry
 
-// Change if your backend is on a different port or HTTPS tunnel:
-const BASE = (localStorage.getItem("listen_base") || "http://127.0.0.1:3000").replace(/\/+$/, "");
+async function getBase() {
+  try {
+    const d = await chrome.storage.sync.get('listen_base');
+    const v = d.listen_base || localStorage.getItem('listen_base') || 'http://127.0.0.1:3000';
+    return v.replace(/\/+$/, '');
+  } catch {
+    return 'http://127.0.0.1:3000';
+  }
+}
 
 // ---------------- helpers ----------------
 const rid = () => (crypto.randomUUID?.() || String(Date.now()));
 
-function sendMetric(event, extra = {}) {
+async function sendMetric(event, extra = {}) {
   try {
     const payload = { event, ts: Date.now(), domain: location.hostname, url: location.href, ...extra };
     const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    const BASE = await getBase();
     navigator.sendBeacon?.(`${BASE}/metric`, blob);
   } catch {}
 }
@@ -43,7 +51,7 @@ function ensureAudio() {
   return a;
 }
 
-async function previewClipInline() {
+async function previewClipInline(BASE) {
   try {
     sendMetric("preview_click");
     const res = await fetch(`${BASE}/extract?url=${encodeURIComponent(location.href)}`);
@@ -96,17 +104,27 @@ function makeDraggable(el) {
     box-shadow:0 10px 30px rgba(0,0,0,.18);
   `;
 
-  pill.addEventListener("click", async (e) => {
+  let busy = false;
+  async function withBusy(fn){
+    if (busy) return;
+    busy = true; pill.style.opacity = '.7'; pill.disabled = true;
+    try { await fn(); } finally { setTimeout(()=>{ busy=false; pill.style.opacity='1'; pill.disabled=false; }, 700); }
+  }
+
+  pill.addEventListener("click", (e) => withBusy(async () => {
     e.preventDefault();
-    if (!e.shiftKey) return previewClipInline();     // default = short preview
-  
-    const a = ensureAudio();                         // Shift = full article
+    const BASE = await getBase();
+    if (!e.shiftKey) return previewClipInline(BASE);     // default = short preview
+    const a = ensureAudio();                              // Shift = full article
     a.src = `${BASE}/read?url=${encodeURIComponent(location.href)}`;
     try { await a.play(); } catch {}
-  });
+  }));
+
+  chrome.storage?.onChanged?.addListener((c)=>{ if (c.listen_base) console.log('[listen] BASE updated:', c.listen_base.newValue); });
   
 
   document.documentElement.appendChild(pill);
   makeDraggable(pill);
-  console.log("[listen] pill injected on", location.href, "→ backend:", BASE);
+  getBase().then(b => console.log("[listen] pill injected on", location.href, "→ backend:", b));
+
 })();
