@@ -1,5 +1,6 @@
 # main.py
 import os, hashlib, requests, time, httpx
+from pathlib import Path
 from collections import OrderedDict
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -17,6 +18,9 @@ load_dotenv(".env")
 API_KEY = os.getenv("ELEVENLABS_API_KEY")
 assert API_KEY, "Set ELEVENLABS_API_KEY in .env"
 VOICE_ID = "EQu48Nbp4OqDxsnYh27f"  # your default voice
+MODEL_ID = "eleven_turbo_v2"
+CACHE_DIR = Path("cache")
+CACHE_DIR.mkdir(exist_ok=True)
 
 # --- app
 app = FastAPI()
@@ -32,6 +36,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.on_event("startup")
 async def _startup():
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+    app.state.locks = {}
 
 @app.on_event("shutdown")
 async def _shutdown():
@@ -57,10 +62,10 @@ def health():
 @app.post("/metric")
 async def metric(req: Request):
     try:
-        payload = await req.body()
-        print({"event":"metric","raw":payload.decode(errors="ignore")[:500]})
-    except Exception as e:
-        print({"event":"metric_error","error":str(e)})
+        data = await req.json()
+    except Exception:
+        data = {"raw": (await req.body()).decode(errors="ignore")[:500]}
+    print({"event":"metric", **data})
     return {"ok": True}
 
 # --- tiny LRU cache (keeps last 50 items)
@@ -76,6 +81,18 @@ cache = LRU()
 # --- cache
 def cache_key(text: str, voice_id: str) -> str:
     return hashlib.sha1(f"{voice_id}:{text}".encode()).hexdigest()
+
+def tts_hash(text: str, voice_id: str, model_id: str = MODEL_ID) -> str:
+    return hashlib.sha1(f"{voice_id}|{model_id}|{text}".encode("utf-8")).hexdigest()
+
+def cache_path(h: str) -> Path:
+    return CACHE_DIR / f"{h}.mp3"
+
+def get_lock(h: str) -> asyncio.Lock:
+    locks = app.state.locks
+    if h not in locks:
+        locks[h] = asyncio.Lock()
+    return locks[h]
 
 # --- TTS request
 class TTSRequest(BaseModel):
@@ -105,85 +122,102 @@ def is_public_http_url(u:str)->bool:
         return True
     except: return False
 
-# --- TTS request (streaming)
+async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str = MODEL_ID):
+    """Stream audio; write to disk cache; return StreamingResponse."""
+    client: httpx.AsyncClient = app.state.http_client
+    h = tts_hash(text, voice_id, model_id)
+    p = cache_path(h)
+
+    # memory cache
+    if h in cache:
+        return Response(content=cache[h], media_type="audio/mpeg")
+    # disk cache
+    if p.exists():
+        data = p.read_bytes()
+        cache.put(h, data)
+        return Response(content=data, media_type="audio/mpeg")
+
+    lock = get_lock(h)
+    async with lock:
+        if h in cache:
+            return Response(content=cache[h], media_type="audio/mpeg")
+        if p.exists():
+            data = p.read_bytes()
+            cache.put(h, data)
+            return Response(content=data, media_type="audio/mpeg")
+
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+        headers = {
+            "xi-api-key": API_KEY,
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "text": text,
+            "model_id": model_id,
+            "voice_settings": {
+                "stability": 0.35,
+                "similarity_boost": 0.9,
+                "style": 0.35,
+                "use_speaker_boost": True,
+            },
+            "optimize_streaming_latency": 2,
+        }
+
+        start_time = time.time()
+        first_chunk_time = None
+        total_bytes = 0
+        buf = bytearray()
+        tmp_path = p.with_suffix(".part")
+
+        async def gen():
+            nonlocal first_chunk_time, total_bytes
+            try:
+                with tmp_path.open("wb") as f:
+                    async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                        if resp.status_code != 200:
+                            err = await resp.aread()
+                            print({"event":"tts_error","status":resp.status_code,"detail":err[:200]})
+                            return
+                        async for chunk in resp.aiter_bytes(chunk_size=4096):
+                            if not chunk:
+                                continue
+                            if first_chunk_time is None:
+                                first_chunk_time = time.time()
+                            total_bytes += len(chunk)
+                            buf.extend(chunk)
+                            f.write(chunk)
+                            yield chunk
+            finally:
+                print({
+                    "event": "tts_stream",
+                    "first_audio_ms": int(((first_chunk_time or time.time()) - start_time) * 1000),
+                    "total_bytes": total_bytes,
+                    "hash": h,
+                })
+                if total_bytes > 0:
+                    try:
+                        tmp_path.replace(p)
+                        cache.put(h, bytes(buf))
+                    except Exception as e:
+                        print({"event":"cache_finalize_error","err":str(e)})
+
+        return StreamingResponse(gen(), media_type="audio/mpeg")
+
+# --- TTS request (streaming via shared function)
 @app.post("/tts")
 async def tts(req: TTSRequest):
-    # allow hardcoded sample text to test end-to-end streaming
     sample_text = (
         "This is a short sample paragraph to verify streaming text to speech. "
         "Audio should begin quickly and continue without interruption."
     )
-    text = (req.text or "").strip() or sample_text
-    voice_id = VOICE_ID
-
-    # if cached, return immediately (non-streaming fast path)
-    k = cache_key(text, voice_id)
-    if k in cache:
-        return Response(content=cache[k], media_type="audio/mpeg")
-
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
-    headers = {
-        "xi-api-key": API_KEY,
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "text": text,
-        "model_id": "eleven_turbo_v2",
-        "voice_settings": {
-            "stability": 0.35,
-            "similarity_boost": 0.9,
-            "style": 0.35,
-            "use_speaker_boost": True,
-        },
-        "optimize_streaming_latency": 2,
-    }
-
-    client: httpx.AsyncClient = app.state.http_client
-
-    start_time = time.time()
-    buffer = bytearray()
-    first_chunk_time: float | None = None
-    total_bytes = 0
-
-    async def stream_tts():
-        nonlocal first_chunk_time, total_bytes
-        try:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    err = await resp.aread()
-                    raise HTTPException(status_code=resp.status_code, detail=err[:200].decode(errors="ignore"))
-                async for chunk in resp.aiter_bytes(chunk_size=4096):
-                    if not chunk:
-                        continue
-                    if first_chunk_time is None:
-                        first_chunk_time = time.time()
-                    total_bytes += len(chunk)
-                    buffer.extend(chunk)
-                    yield chunk
-        finally:
-            # log basic metrics
-            start_ms = int((start_time) * 1000)
-            first_audio_ms = int(((first_chunk_time or time.time()) - start_time) * 1000)
-            print({
-                "event": "tts_stream",
-                "start_ms": start_ms,
-                "first_audio_ms": first_audio_ms,
-                "total_bytes": total_bytes,
-            })
-            # cache the full audio if any was produced
-            if total_bytes > 0:
-                try:
-                    cache.put(k, bytes(buffer))
-                except Exception:
-                    pass
-
-    return StreamingResponse(stream_tts(), media_type="audio/mpeg")
+    text = (getattr(req, "text", "") or "").strip() or sample_text
+    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID)
 
 # --- TTS GET for direct <audio src>
 @app.get("/tts")
 async def tts_get(text: str = Query("", min_length=0)):
-    return await tts(TTSRequest(text=text))
+    return await stream_tts_for_text(text or "Hello", voice_id=VOICE_ID, model_id=MODEL_ID)
 
 # --- extract
 @app.get("/extract")
@@ -227,7 +261,7 @@ class ReadRequest(BaseModel):
 
 # --- read
 @app.post("/read")
-def read(req: ReadRequest):
+async def read(req: ReadRequest):
     if not (req.text or req.url):
         raise HTTPException(400, "Provide 'text' or 'url'")
     if req.url:
@@ -249,23 +283,7 @@ def read(req: ReadRequest):
     else:
         text = prosody("", req.text)
 
-    # reuse your TTS flow
-    voice_id = VOICE_ID
-    k = cache_key(text, voice_id)
-    if k in cache:
-        return Response(content=cache[k], media_type="audio/mpeg")
-
-    r = requests.post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
-        headers={"xi-api-key": API_KEY, "Content-Type": "application/json"},
-        json={"text": text},
-        timeout=60,
-    )
-    if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text[:200])
-
-    cache.put(k, r.content)
-    return Response(content=r.content, media_type="audio/mpeg")
+    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID)
 
 def _split_text_for_tts(t: str, target: int = 2200) -> list[str]:
     # Greedy paragraph-based splitting with sentence hints

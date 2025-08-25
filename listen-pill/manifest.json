@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Listen Demo (NatGeo)",
     "version": "0.1.0",
-    "description": "Injects a Listen pill on National Geographic articles that opens your local reader.",
+    "description": "Injects a Listen pill on National Geographic that opens the local reader in a new tab.",
     "content_scripts": [
       {
         "matches": ["https://*.nationalgeographic.com/*"],
