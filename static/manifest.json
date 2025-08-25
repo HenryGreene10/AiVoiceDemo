@@ -1,0 +1,15 @@
+{
+    "manifest_version": 3,
+    "name": "Listen Demo (NatGeo)",
+    "version": "0.1.0",
+    "description": "Injects a Listen pill on National Geographic articles that opens your local reader.",
+    "content_scripts": [
+      {
+        "matches": ["https://*.nationalgeographic.com/*"],
+        "js": ["content.js"],
+        "css": ["overlay.css"],
+        "run_at": "document_idle"
+      }
+    ]
+  }
+  

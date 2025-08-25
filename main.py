@@ -53,6 +53,16 @@ async def preflight(_: Request, path: str):
 def health():
     return {"ok": True}
 
+# --- metric (very simple)
+@app.post("/metric")
+async def metric(req: Request):
+    try:
+        payload = await req.body()
+        print({"event":"metric","raw":payload.decode(errors="ignore")[:500]})
+    except Exception as e:
+        print({"event":"metric_error","error":str(e)})
+    return {"ok": True}
+
 # --- tiny LRU cache (keeps last 50 items)
 class LRU(OrderedDict):
     def __init__(self, cap=50): super().__init__(); self.cap = cap
