@@ -12,6 +12,7 @@ import trafilatura, re, requests as http
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 from fastapi.staticfiles import StaticFiles
+from metrics import write_stream_row
 
 # --- config / env
 load_dotenv(".env")
@@ -27,9 +28,13 @@ MAX_CHARS = 1600  # ~90 seconds
 # --- app
 app = FastAPI()
 
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "").strip()
+ALLOWED_ORIGINS_SET = set([o.strip() for o in ALLOW_ORIGINS.split(",") if o.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    allow_origins=list(ALLOWED_ORIGINS_SET) if ALLOWED_ORIGINS_SET else ["*"],
+    allow_methods=["*"], allow_headers=["*"]
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -46,9 +51,9 @@ async def _shutdown():
 
 # --- simple PNA preflight helper (FastAPI's CORS doesn't add this header yet)
 @app.options("/{path:path}")
-async def preflight(_: Request, path: str):
+async def preflight(req: Request, path: str):
     headers = {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": req.headers.get("origin", "*") if ALLOWED_ORIGINS_SET else "*",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Private-Network": "true",
@@ -69,6 +74,19 @@ async def metric(req: Request):
         data = {"raw": (await req.body()).decode(errors="ignore")[:500]}
     print({"event":"metric", **data})
     return {"ok": True}
+
+# --- simple API key guard (prod only)
+ALLOWED_KEYS = set([k.strip() for k in os.getenv("ALLOWED_KEYS", "").split(",") if k.strip()])
+
+def guard_request(req: Request):
+    if not DEMO_MODE:
+        origin = req.headers.get("origin")
+        if ALLOWED_ORIGINS_SET and origin not in ALLOWED_ORIGINS_SET:
+            raise HTTPException(403, "Origin not allowed")
+        if ALLOWED_KEYS:
+            key = req.headers.get("x-listen-key")
+            if not key or key not in ALLOWED_KEYS:
+                raise HTTPException(403, "Missing or invalid key")
 
 # --- tiny LRU cache (keeps last 50 items)
 class LRU(OrderedDict):
@@ -134,12 +152,21 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
     # memory cache
     if h in cache:
         print({"event":"cache_hit_mem","hash":h})
+        try:
+            write_stream_row(int(time.time()*1000), "mem", 0, len(cache[h]), model_id, h)
+        except Exception:
+            pass
         return Response(content=cache[h], media_type="audio/mpeg")
     # disk cache
     if p.exists():
-        print({"event":"cache_hit_disk","hash":h,"bytes":p.stat().st_size})
+        size = p.stat().st_size
+        print({"event":"cache_hit_disk","hash":h,"bytes":size})
         data = p.read_bytes()
         cache.put(h, data)
+        try:
+            write_stream_row(int(time.time()*1000), "disk", 0, size, model_id, h)
+        except Exception:
+            pass
         return Response(content=data, media_type="audio/mpeg")
 
     lock = get_lock(h)
@@ -195,12 +222,12 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
                             f.write(chunk)
                             yield chunk
             finally:
-                print({
-                    "event": "tts_stream",
-                    "first_audio_ms": int(((first_chunk_time or time.time()) - start_time) * 1000),
-                    "total_bytes": total_bytes,
-                    "hash": h,
-                })
+                first_ms = int(((first_chunk_time or time.time()) - start_time) * 1000)
+                print({"event": "tts_stream", "first_audio_ms": first_ms, "total_bytes": total_bytes, "hash": h})
+                try:
+                    write_stream_row(int(time.time()*1000), "api", first_ms, total_bytes, model_id, h)
+                except Exception:
+                    pass
                 if total_bytes > 0:
                     try:
                         tmp_path.replace(p)
@@ -212,7 +239,8 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
 
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
-async def tts(req: TTSRequest):
+async def tts(req: TTSRequest, request: Request):
+    guard_request(request)
     sample_text = (
         "This is a short sample paragraph to verify streaming text to speech. "
         "Audio should begin quickly and continue without interruption."
@@ -222,12 +250,16 @@ async def tts(req: TTSRequest):
 
 # --- TTS GET for direct <audio src>
 @app.get("/tts")
-async def tts_get(text: str = Query("", min_length=0), model: str = Query(MODEL_ID)):
+async def tts_get(text: str = Query("", min_length=0), model: str = Query(MODEL_ID), request: Request = None):
+    if request is not None:
+        guard_request(request)
     return await stream_tts_for_text(text or "Hello", voice_id=VOICE_ID, model_id=model)
 
 # --- extract
 @app.get("/extract")
-def extract(url: str = Query(..., min_length=8)):
+def extract(url: str = Query(..., min_length=8), request: Request = None):
+    if request is not None:
+        guard_request(request)
     if not is_public_http_url(url):
         raise HTTPException(400, "Invalid URL")
     try:
@@ -268,7 +300,8 @@ class ReadRequest(BaseModel):
 # --- read
 # ---- READ: fetch article → extract → prosody → stream (cached) ----
 @app.post("/read")
-async def read(req: ReadRequest):
+async def read(req: ReadRequest, request: Request):
+    guard_request(request)
     if not (req.text or req.url):
         raise HTTPException(400, "Provide 'text' or 'url'")
 
@@ -302,7 +335,9 @@ async def read(req: ReadRequest):
 
 # GET /read — used by the inline <audio> player
 @app.get("/read")
-async def read_get(url: str | None = Query(None, min_length=8), text: str | None = None):
+async def read_get(url: str | None = Query(None, min_length=8), text: str | None = None, request: Request = None):
+    if request is not None:
+        guard_request(request)
     if not (url or text):
         raise HTTPException(400, "Provide 'text' or 'url'")
 
