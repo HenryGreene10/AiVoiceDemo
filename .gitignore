@@ -1,3 +1,18 @@
-__pycache__/
+# SAM / builds / virtualenvs / IDE / OS junk
+.aws-sam/
+.cache/
+cache/
+dist/
+build/
+venv/
 .venv/
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+
+# Local env + secrets + outputs
 .env
+env.json
+*.mp3

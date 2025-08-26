@@ -99,7 +99,12 @@ async def metric(req: Request):
 # --- simple API key guard (prod only)
 ALLOWED_KEYS = set([k.strip() for k in os.getenv("ALLOWED_KEYS", "").split(",") if k.strip()])
 
+def dev_bypass_enabled():
+    return os.getenv("DEV_BYPASS_TOKEN", "").strip().lower() in ("1","true","yes")
+
 def guard_request(req: Request):
+    if dev_bypass_enabled():
+        return
     if not DEMO_MODE:
         origin = req.headers.get("origin")
         if ALLOWED_ORIGINS_SET and origin not in ALLOWED_ORIGINS_SET:

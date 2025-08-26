@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: FastAPI on Lambda with S3 audio cache and optional CloudFront
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 30
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.handler
+      CodeUri: src/
+      Runtime: python3.11
+      Policies:
+        - AmazonS3FullAccess
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: "*"
+      Environment:
+        Variables:
+          MODEL_ID: eleven_flash_v2_5
+          VOICE_ID: default
+          MAX_CHARS: "2800"
+          MAX_CACHE_BYTES: "2000000000"
+          ALLOWED_ORIGINS: "https://localhost,https://127.0.0.1,https://*.trycloudflare.com,https://*.ngrok-free.app"
+          DEV_BYPASS_TOKEN: "true"   # << skip HMAC while we build
+
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "tts-audio-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: MoveOldAudioToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 60
+                StorageClass: GLACIER
+
+  MetricsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AudioBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${AudioBucket}"
+              - !Sub "arn:aws:s3:::${AudioBucket}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  BucketName:
+    Value: !Ref AudioBucket
+
+
