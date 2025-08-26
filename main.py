@@ -24,6 +24,7 @@ CACHE_DIR = Path("cache")
 CACHE_DIR.mkdir(exist_ok=True)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 1600  # ~90 seconds
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 # --- app
 app = FastAPI()
@@ -64,6 +65,26 @@ async def preflight(req: Request, path: str):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+# --- metrics API (admin)
+@app.get("/admin/metrics.json")
+async def metrics_json(n: int = Query(200, ge=1, le=5000), token: str = Query("")):
+    if ADMIN_TOKEN and token != ADMIN_TOKEN:
+        raise HTTPException(403, "Forbidden")
+    file_path = Path("metrics/streams.csv")
+    if not file_path.exists():
+        return {"rows": []}
+    try:
+        import csv
+        rows = []
+        with file_path.open("r", encoding="utf-8") as f:
+            r = csv.DictReader(f)
+            for row in r:
+                rows.append(row)
+        rows = rows[-n:]
+        return {"rows": rows}
+    except Exception as e:
+        raise HTTPException(500, f"metrics read error: {e}")
 
 # --- metric (very simple)
 @app.post("/metric")
@@ -142,7 +163,7 @@ def is_public_http_url(u:str)->bool:
         return True
     except: return False
 
-async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str = MODEL_ID):
+async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str = MODEL_ID, voice_settings: dict | None = None, tone: str = "neutral"):
     """Stream audio; write to disk cache; return StreamingResponse."""
     client: httpx.AsyncClient = app.state.http_client
     h = tts_hash(text, voice_id, model_id)
@@ -187,7 +208,7 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
         payload = {
             "text": text,
             "model_id": model_id,
-            "voice_settings": {
+            "voice_settings": voice_settings or {
                 "stability": 0.35,
                 "similarity_boost": 0.9,
                 "style": 0.35,
@@ -223,7 +244,7 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
                             yield chunk
             finally:
                 first_ms = int(((first_chunk_time or time.time()) - start_time) * 1000)
-                print({"event": "tts_stream", "first_audio_ms": first_ms, "total_bytes": total_bytes, "hash": h})
+                print({"event": "tts_stream", "first_audio_ms": first_ms, "total_bytes": total_bytes, "hash": h, "tone": tone})
                 try:
                     write_stream_row(int(time.time()*1000), "api", first_ms, total_bytes, model_id, h)
                 except Exception:
@@ -291,6 +312,63 @@ def prosody(title: str, body: str) -> str:
     # tighten spacing, add paragraph pauses
     b = re.sub(r'\n{3,}', '\n\n', b)
     return head + b
+CAPTION_HINTS = (
+    "photograph by", "photo by", "image:", "video:", "illustration by",
+    "getty images", "ap photo", "reuters", "courtesy", "via", "credit:"
+)
+
+def looks_like_caption(line: str) -> bool:
+    s = line.strip()
+    if not s: return True
+    if len(s) < 40: return True
+    low = s.lower()
+    return any(h in low for h in CAPTION_HINTS)
+
+def strip_captions(text: str) -> str:
+    parts = [p.strip() for p in re.split(r"\n{1,}", text)]
+    keep = [p for p in parts if not looks_like_caption(p)]
+    return "\n\n".join(keep)
+
+def find_author_from_meta(html: str) -> str | None:
+    m = re.search(r'<meta[^>]+name=["\']author["\'][^>]+content=["\']([^"\']+)["\']', html, flags=re.I)
+    if m: return m.group(1).strip()
+    m = re.search(r'"author"\s*:\s*"\s*([^"]+)\s*"', html, flags=re.I)
+    if m: return m.group(1).strip()
+    m = re.search(r'"author"\s*:\s*{\s*"@type"\s*:\s*"Person"\s*,\s*"name"\s*:\s*"([^"]+)"', html, flags=re.I)
+    if m: return m.group(1).strip()
+    return None
+
+def build_read_text(title: str, body: str, author: str | None) -> str:
+    intro = f"Now reading: {title}.\n\n" if title else ""
+    core = strip_captions(body)
+    outro = f"\n\nArticle by {author}." if author else ""
+    core = re.sub(r'\n{3,}', '\n\n', core)
+    return intro + core + outro
+
+# --- Prosody tone 1.0
+NEG = {"dies","dead","death","shooting","war","massacre","earthquake","flood","famine","injured","tragedy","lawsuit","bankrupt","recall","layoffs","crash","toxic","drought","meltdown"}
+POS = {"record","soared","booming","surge","breakthrough","discovery","wins","celebrates","milestone","landmark","thrilled","optimistic"}
+
+def pick_tone(title: str, body: str) -> str:
+    t = (title or "").lower(); b = (body or "").lower()
+    n = sum(w in t or w in b for w in NEG); p = sum(w in t or w in b for w in POS)
+    if n > p and n >= 2: return "somber"
+    if p > n and p >= 2: return "upbeat"
+    return "neutral"
+
+def shape_text_for_tone(text: str, tone: str) -> tuple[str, dict]:
+    if tone == "somber":
+        shaped = re.sub(r",\s*", ", … ", text)
+        shaped = re.sub(r"[:;]\s*", ". ", shaped)
+        settings = {"stability":0.25,"similarity_boost":0.9,"style":0.2,"use_speaker_boost":True}
+    elif tone == "upbeat":
+        shaped = re.sub(r"\.\s+", ". ", text)
+        settings = {"stability":0.45,"similarity_boost":0.9,"style":0.5,"use_speaker_boost":True}
+    else:
+        shaped = text
+        settings = {"stability":0.35,"similarity_boost":0.9,"style":0.35,"use_speaker_boost":True}
+    shaped = re.sub(r"\n{3,}", "\n\n", shaped)
+    return shaped, settings
 
 # --- read
 class ReadRequest(BaseModel):
@@ -309,7 +387,8 @@ async def read(req: ReadRequest, request: Request):
         if not is_public_http_url(req.url):
             raise HTTPException(400, "Invalid URL")
 
-        r = http.get(req.url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (ReaderBot)"})
+        client: httpx.AsyncClient = app.state.http_client
+        r = await client.get(req.url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (ReaderBot)"})
         if r.status_code != 200 or not r.text:
             raise HTTPException(502, "Fetch failed")
 
@@ -319,19 +398,24 @@ async def read(req: ReadRequest, request: Request):
         if not extracted:
             raise HTTPException(422, "No article content found")
 
-        # title from HTML <title> (simple fallback)
+        # title + author + cleaned body
         m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I | re.S)
+        author = find_author_from_meta(r.text)
         title = (m.group(1).strip() if m else "")
         body = extracted.strip()
-        text = prosody(title, body)
+        tone = pick_tone(title, body)
+        text = build_read_text(title, body, author)
+        text, voice_settings = shape_text_for_tone(text, tone)
     else:
+        tone = "neutral"
         text = prosody("", (req.text or ""))
+        text, voice_settings = shape_text_for_tone(text, tone)
 
     # Demo cap for full reads
     if DEMO_MODE:
         text = text[:MAX_CHARS]
     # Use the shared cached streamer (disk + memory). This saves credits.
-    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID)
+    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID, voice_settings=voice_settings, tone=tone)
 
 # GET /read — used by the inline <audio> player
 @app.get("/read")
@@ -345,7 +429,8 @@ async def read_get(url: str | None = Query(None, min_length=8), text: str | None
         if not is_public_http_url(url):
             raise HTTPException(400, "Invalid URL")
 
-        r = http.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
+        client: httpx.AsyncClient = app.state.http_client
+        r = await client.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
         if r.status_code != 200 or not r.text:
             raise HTTPException(502, "Fetch failed")
 
@@ -357,41 +442,21 @@ async def read_get(url: str | None = Query(None, min_length=8), text: str | None
 
         m = re.search(r"<title[^>]*>(.*?)</title>", r.text, flags=re.I | re.S)
         title = (m.group(1).strip() if m else "")
+        author = find_author_from_meta(r.text)
         body  = extracted.strip()
-        text_final = prosody(title, body)
+        tone = pick_tone(title, body)
+        text_final = build_read_text(title, body, author)
+        text_final, voice_settings = shape_text_for_tone(text_final, tone)
     else:
+        tone = "neutral"
         text_final = prosody("", text or "")
+        text_final, voice_settings = shape_text_for_tone(text_final, tone)
 
     # Demo cap for full reads
     if DEMO_MODE:
         text_final = text_final[:MAX_CHARS]
-    return await stream_tts_for_text(text_final, voice_id=VOICE_ID, model_id=MODEL_ID)
+    return await stream_tts_for_text(text_final, voice_id=VOICE_ID, model_id=MODEL_ID, voice_settings=voice_settings, tone=tone)
 
 
-def _split_text_for_tts(t: str, target: int = 2200) -> list[str]:
-    # Greedy paragraph-based splitting with sentence hints
-    parts: list[str] = []
-    buf: list[str] = []
-    cur = 0
-    for para in re.split(r"\n{2,}", t.strip()):
-        p = para.strip()
-        if not p:
-            continue
-        if cur + len(p) + 2 > target and buf:
-            parts.append("\n\n".join(buf))
-            buf = []
-            cur = 0
-        buf.append(p)
-        cur += len(p) + 2
-    if buf:
-        parts.append("\n\n".join(buf))
-    # If still too large chunks, hard split
-    out: list[str] = []
-    for chunk in parts:
-        if len(chunk) <= target:
-            out.append(chunk)
-        else:
-            for i in range(0, len(chunk), target):
-                out.append(chunk[i:i+target])
-    return out
+# _split_text_for_tts: reserved for future chunked synthesis
 

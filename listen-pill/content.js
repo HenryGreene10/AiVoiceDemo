@@ -57,7 +57,7 @@ async function previewClipInline(BASE) {
     const res = await fetch(`${BASE}/extract?url=${encodeURIComponent(location.href)}`);
     if (!res.ok) throw new Error("extract failed");
     const j = await res.json();
-    const clip = (j?.text || "").slice(0, 700); // ~8–10s
+    const clip = (j?.text || "").slice(0, 320); // ~3–5s
     if (!clip) throw new Error("no text");
     const a = ensureAudio();
     a.src = `${BASE}/tts?model=eleven_flash_v2&text=${encodeURIComponent(clip)}`;
@@ -89,42 +89,112 @@ function makeDraggable(el) {
 }
 
 // ---------------- inject pill ----------------
-(function inject() {
-  if (document.getElementById("listen-pill")) return;
+// Integrated sticky panel version
+(function injectPanel(){
+  if (document.getElementById('listen-panel')) return;
 
-  const pill = document.createElement("button");
-  pill.id = "listen-pill";
-  pill.type = "button";
-  pill.textContent = "Listen (click = preview, Shift = full)";
-  pill.title = "Stream this article as audio";
-  pill.style.cssText = `
-    position:fixed; right:20px; bottom:20px; z-index:2147483647;
-    padding:12px 16px; border:0; border-radius:999px; cursor:pointer;
-    background:#111; color:#fff; font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-    box-shadow:0 10px 30px rgba(0,0,0,.18);
+  const container =
+    document.querySelector('article, main [role=main], main, [data-test="ArticlePage"]') ||
+    document.body;
+
+  const panel = document.createElement('div');
+  panel.id = 'listen-panel';
+  panel.innerHTML = `
+    <button id="listen-pp" aria-label="Play preview">▶</button>
+    <div id="listen-title">Listen preview — Shift for full</div>
+    <div class="listen-progress">
+      <input id="listen-bar" type="range" min="0" max="100" value="0" />
+    </div>
+    <div id="listen-time">0:00 / 0:00</div>
+    <div id="listen-close" title="Close">✕</div>
   `;
 
+  if (container === document.body) panel.classList.add('fallback');
+  if (container.firstElementChild) container.insertBefore(panel, container.firstElementChild);
+  else container.appendChild(panel);
+
   let busy = false;
-  async function withBusy(fn){
-    if (busy) return;
-    busy = true; pill.style.opacity = '.7'; pill.disabled = true;
-    try { await fn(); } finally { setTimeout(()=>{ busy=false; pill.style.opacity='1'; pill.disabled=false; }, 700); }
+
+  function ensureDockedAudio(){
+    let a = document.getElementById('listen-audio');
+    if (!a){
+      a = document.createElement('audio');
+      a.id = 'listen-audio'; a.autoplay = true;
+      panel.appendChild(a);
+      wireAudio(a);
+    }
+    return a;
   }
 
-  pill.addEventListener("click", (e) => withBusy(async () => {
-    e.preventDefault();
+  function fmt(t){ t=Math.max(0, t|0); const m=(t/60)|0, s=(t%60)|0; return m+":"+String(s).padStart(2,'0'); }
+
+  function wireAudio(a){
+    const pp = panel.querySelector('#listen-pp');
+    const bar = panel.querySelector('#listen-bar');
+    const time = panel.querySelector('#listen-time');
+    const title = panel.querySelector('#listen-title');
+    const close = panel.querySelector('#listen-close');
+    title.textContent = (document.title || '').slice(0,60);
+    close.onclick = ()=>{ a.pause(); panel.remove(); };
+
+    a.addEventListener('play', ()=>{ pp.textContent='⏸'; });
+    a.addEventListener('pause', ()=>{ pp.textContent='▶'; });
+    a.addEventListener('timeupdate', ()=>{
+      if (a.duration){ bar.value = ((a.currentTime/a.duration)*100)|0; time.textContent = fmt(a.currentTime) + ' / ' + fmt(a.duration); }
+    });
+    a.addEventListener('durationchange', ()=>{ if (a.duration){ time.textContent = fmt(a.currentTime) + ' / ' + fmt(a.duration); }});
+    a.addEventListener('ended', ()=>{ pp.textContent='▶'; });
+    bar.oninput = ()=>{ if (a.duration){ a.currentTime = (bar.value/100)*a.duration; }};
+  }
+
+  // After building panel and audio, bind controls
+  const pp = panel.querySelector('#listen-pp');
+  const bar = panel.querySelector('#listen-bar');
+  const time = panel.querySelector('#listen-time');
+  const title = panel.querySelector('#listen-title');
+  const close = panel.querySelector('#listen-close');
+
+  // make sure it's a real button, not a submit
+  pp.setAttribute('type', 'button');
+  // ensure clicks are allowed even if parents disable them
+  panel.style.pointerEvents = 'auto';
+  pp.style.pointerEvents = 'auto';
+
+  // busy wrapper that forwards the event
+  function withBusy(fn) {
+    return async function (e) {
+      console.log('[listen] handler entered');
+      if (busy) return;
+      busy = true; pp.disabled = true; panel.style.opacity = '.85';
+      try { await fn(e); } finally {
+        setTimeout(() => { busy = false; pp.disabled = false; panel.style.opacity = '1'; }, 500);
+      }
+    };
+  }
+
+  async function handleClick(e) {
+    console.log('[listen] click', { shift: e?.shiftKey });
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     const BASE = await getBase();
-    if (!e.shiftKey) return previewClipInline(BASE);     // default = short preview
-    const a = ensureAudio();                              // Shift = full article
+    if (!e?.shiftKey) {
+      title.textContent = 'Previewing…';
+      await previewClipInline(BASE);
+      return;
+    }
+    title.textContent = 'Reading full article…';
+    const a = ensureDockedAudio();
     a.src = `${BASE}/read?url=${encodeURIComponent(location.href)}`;
     try { await a.play(); } catch {}
-  }));
+  }
 
-  chrome.storage?.onChanged?.addListener((c)=>{ if (c.listen_base) console.log('[listen] BASE updated:', c.listen_base.newValue); });
-  
+  const onClick = withBusy(handleClick);
+  // bind multiple routes so page overlays can't eat the event
+  pp.addEventListener('click', onClick, { capture: true });
+  pp.addEventListener('pointerdown', (e) => { if (e.button === 0) onClick(e); }, { capture: true });
+  // keyboard accessibility
+  pp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(e); });
+  // delegation fallback if node swapped
+  panel.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#listen-pp')) onClick(e); }, { capture: true });
 
-  document.documentElement.appendChild(pill);
-  makeDraggable(pill);
-  getBase().then(b => console.log("[listen] pill injected on", location.href, "→ backend:", b));
-
+  console.log('[listen] panel bound on', location.hostname);
 })();
