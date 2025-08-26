@@ -345,6 +345,53 @@ def build_read_text(title: str, body: str, author: str | None) -> str:
     core = re.sub(r'\n{3,}', '\n\n', core)
     return intro + core + outro
 
+# --- helpers for /meta (title/subtitle/author/cover) ---
+def _meta_clean(s: str) -> str:
+    return re.sub(r'\s+', ' ', s).strip()
+
+def find_subtitle(html: str) -> str | None:
+    m = re.search(r'<h2[^>]*>(.*?)</h2>', html, flags=re.I|re.S)
+    if m:
+        return _meta_clean(re.sub(r'<[^>]+>', '', m.group(1)))
+    m = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']', html, flags=re.I)
+    return _meta_clean(m.group(1)) if m else None
+
+def find_author(html: str) -> str | None:
+    m = re.search(r'<meta[^>]+name=["\']author["\'][^>]+content=["\']([^"\']+)["\']', html, flags=re.I)
+    if m: return _meta_clean(m.group(1))
+    m = re.search(r'"author"\s*:\s*"\s*([^"]+)\s*"', html, flags=re.I)
+    if m: return _meta_clean(m.group(1))
+    m = re.search(r'"author"\s*:\s*{\s*"@type"\s*:\s*"Person"\s*,\s*"name"\s*:\s*"([^"]+)"', html, flags=re.I)
+    if m: return _meta_clean(m.group(1))
+    m = re.search(r'>\s*By\s+([A-Z][A-Za-z0-9.\- ]+)\s*<', html, flags=re.I)
+    return _meta_clean(m.group(1)) if m else None
+
+def find_og_image(html: str) -> str | None:
+    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, flags=re.I)
+    return m.group(1).strip() if m else None
+
+@app.get("/meta")
+def meta(url: str = Query(..., min_length=8)):
+    if not is_public_http_url(url):
+        raise HTTPException(400, "Invalid URL")
+    try:
+        r = http.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0 (ReaderBot)"})
+        if r.status_code != 200 or not r.text:
+            raise HTTPException(502, "Fetch failed")
+        html = r.text
+
+        mt = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.I|re.S)
+        title = _meta_clean(mt.group(1)) if mt else ""
+        return {
+            "title": title,
+            "subtitle": find_subtitle(html),
+            "author": find_author(html),
+            "image": find_og_image(html),
+        }
+    except HTTPException: raise
+    except Exception:
+        raise HTTPException(500, "Meta error")
+
 # --- Prosody tone 1.0
 NEG = {"dies","dead","death","shooting","war","massacre","earthquake","flood","famine","injured","tragedy","lawsuit","bankrupt","recall","layoffs","crash","toxic","drought","meltdown"}
 POS = {"record","soared","booming","surge","breakthrough","discovery","wins","celebrates","milestone","landmark","thrilled","optimistic"}

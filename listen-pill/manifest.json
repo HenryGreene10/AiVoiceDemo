@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Listen Demo (NatGeo)",
-  "version": "0.1.0",
-  "description": "Injects a Listen pill on National Geographic that opens the local reader in a new tab.",
+  "name": "Listen Demo",
+  "version": "0.3.0",
+  "description": "Launcher + modal audio reader for any article.",
   "permissions": ["storage"],
-  "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["https://*.nationalgeographic.com/*"],
+      "matches": ["https://*/*", "http://*/*"],
       "js": ["content.js"],
       "css": ["overlay.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }
