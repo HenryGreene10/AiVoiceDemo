@@ -90,111 +90,104 @@ function makeDraggable(el) {
 
 // ---------------- inject pill ----------------
 // Integrated sticky panel version
-(function injectPanel(){
-  if (document.getElementById('listen-panel')) return;
+(function mountListenUI(){
+  if (document.getElementById('listen-ui')) return;
 
-  const container =
-    document.querySelector('article, main [role=main], main, [data-test="ArticlePage"]') ||
-    document.body;
+  const container = document.querySelector('article') ||
+                    document.querySelector('main [role=main]') ||
+                    document.querySelector('main') || document.body;
 
-  const panel = document.createElement('div');
-  panel.id = 'listen-panel';
-  panel.innerHTML = `
-    <button id="listen-pp" aria-label="Play preview">▶</button>
-    <div id="listen-title">Listen preview — Shift for full</div>
-    <div class="listen-progress">
-      <input id="listen-bar" type="range" min="0" max="100" value="0" />
-    </div>
-    <div id="listen-time">0:00 / 0:00</div>
-    <div id="listen-close" title="Close">✕</div>
+  const ui = document.createElement('div');
+  ui.id = 'listen-ui';
+  ui.innerHTML = `
+    <span id="listen-cur">0:00</span>
+    <input id="listen-bar" type="range" min="0" max="100" value="0" />
+    <span id="listen-dur">0:00</span>
+
+    <button id="listen-rew"  class="listen-btn" type="button" title="Back 10s" aria-label="Back 10 seconds">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M10 6v3L5 5l5-4v3a8 8 0 108 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <button id="listen-play" type="button" title="Play / Pause" aria-label="Play">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+    </button>
+
+    <button id="listen-fwd" class="listen-btn" type="button" title="Forward 30s" aria-label="Forward 30 seconds">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M14 6v3l5-4-5-4v3a8 8 0 11-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
   `;
 
-  if (container === document.body) panel.classList.add('fallback');
-  if (container.firstElementChild) container.insertBefore(panel, container.firstElementChild);
-  else container.appendChild(panel);
+  const anchor = container.querySelector('h1, h2') || container.firstElementChild;
+  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(ui, anchor.nextSibling);
+  else container.prepend(ui);
+  if (container === document.body) ui.classList.add('fallback');
+
+  // audio element
+  const audio = document.getElementById('listen-audio') || (()=>{ const a=document.createElement('audio'); a.id='listen-audio'; a.preload='none'; a.style.display='none'; document.documentElement.appendChild(a); return a; })();
+
+  // refs
+  const play = ui.querySelector('#listen-play');
+  const rew  = ui.querySelector('#listen-rew');
+  const fwd  = ui.querySelector('#listen-fwd');
+  const bar  = ui.querySelector('#listen-bar');
+  const cur  = ui.querySelector('#listen-cur');
+  const dur  = ui.querySelector('#listen-dur');
+
+  // helpers
+  const fmt = (s)=>{ s = Math.max(0, s|0); const m=(s/60|0), ss=String(s%60).padStart(2,'0'); return `${m}:${ss}`; };
+  const setIcon = ()=> {
+    play.innerHTML = audio.paused
+      ? `<svg viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none"><rect x="6" y="5" width="4" height="14" fill="black"/><rect x="14" y="5" width="4" height="14" fill="black"/></svg>`;
+  };
 
   let busy = false;
+  const withBusy = (fn) => async (e) => {
+    if (busy) return;
+    busy = true; play.disabled = true; ui.style.opacity = '.85';
+    try { await fn(e); } finally { setTimeout(()=>{ busy=false; play.disabled=false; ui.style.opacity='1'; }, 350); }
+  };
 
-  function ensureDockedAudio(){
-    let a = document.getElementById('listen-audio');
-    if (!a){
-      a = document.createElement('audio');
-      a.id = 'listen-audio'; a.autoplay = true;
-      panel.appendChild(a);
-      wireAudio(a);
+  // audio <-> UI
+  audio.addEventListener('loadedmetadata', ()=>{ dur.textContent = fmt(audio.duration); cur.textContent = fmt(0); bar.value = 0; });
+  audio.addEventListener('timeupdate', ()=>{
+    if (!audio.duration) return;
+    cur.textContent = fmt(audio.currentTime);
+    dur.textContent = fmt(audio.duration);
+    bar.value = (audio.currentTime / audio.duration) * 100;
+  });
+  audio.addEventListener('play', setIcon);
+  audio.addEventListener('pause', setIcon);
+  audio.addEventListener('ended', setIcon);
+
+  bar.addEventListener('input', ()=>{ if (audio.duration) audio.currentTime = (bar.value/100)*audio.duration; });
+  rew.addEventListener('click', ()=>{ audio.currentTime = Math.max(0, audio.currentTime - 10); });
+  fwd.addEventListener('click', ()=>{ if(audio.duration) audio.currentTime = Math.min(audio.duration, audio.currentTime + 30); });
+
+  // preview vs full
+  async function startPlayback(e){
+    e?.preventDefault();
+    const BASE = (await getBase()).replace(/\/+$/,'');
+    if (!e?.shiftKey){
+      try{
+        const r = await fetch(`${BASE}/extract?url=${encodeURIComponent(location.href)}`);
+        if (!r.ok) throw new Error('extract failed');
+        const j = await r.json();
+        const clip = (j?.text || '').slice(0, 320);
+        if (!clip) throw new Error('no text');
+        audio.src = `${BASE}/tts?model=eleven_flash_v2&text=${encodeURIComponent(clip)}`;
+      }catch(err){ console.warn('[listen] preview error', err); return; }
+    } else {
+      audio.src = `${BASE}/read?url=${encodeURIComponent(location.href)}`;
     }
-    return a;
+    try { await audio.play(); } catch {}
   }
 
-  function fmt(t){ t=Math.max(0, t|0); const m=(t/60)|0, s=(t%60)|0; return m+":"+String(s).padStart(2,'0'); }
+  play.addEventListener('click', withBusy(async (e)=>{
+    if (audio.src && !audio.paused){ audio.pause(); return; }
+    return startPlayback(e);
+  }), { capture: true });
+  play.addEventListener('keydown', (e)=>{ if (e.key===' '||e.key==='Enter') startPlayback(e); });
 
-  function wireAudio(a){
-    const pp = panel.querySelector('#listen-pp');
-    const bar = panel.querySelector('#listen-bar');
-    const time = panel.querySelector('#listen-time');
-    const title = panel.querySelector('#listen-title');
-    const close = panel.querySelector('#listen-close');
-    title.textContent = (document.title || '').slice(0,60);
-    close.onclick = ()=>{ a.pause(); panel.remove(); };
-
-    a.addEventListener('play', ()=>{ pp.textContent='⏸'; });
-    a.addEventListener('pause', ()=>{ pp.textContent='▶'; });
-    a.addEventListener('timeupdate', ()=>{
-      if (a.duration){ bar.value = ((a.currentTime/a.duration)*100)|0; time.textContent = fmt(a.currentTime) + ' / ' + fmt(a.duration); }
-    });
-    a.addEventListener('durationchange', ()=>{ if (a.duration){ time.textContent = fmt(a.currentTime) + ' / ' + fmt(a.duration); }});
-    a.addEventListener('ended', ()=>{ pp.textContent='▶'; });
-    bar.oninput = ()=>{ if (a.duration){ a.currentTime = (bar.value/100)*a.duration; }};
-  }
-
-  // After building panel and audio, bind controls
-  const pp = panel.querySelector('#listen-pp');
-  const bar = panel.querySelector('#listen-bar');
-  const time = panel.querySelector('#listen-time');
-  const title = panel.querySelector('#listen-title');
-  const close = panel.querySelector('#listen-close');
-
-  // make sure it's a real button, not a submit
-  pp.setAttribute('type', 'button');
-  // ensure clicks are allowed even if parents disable them
-  panel.style.pointerEvents = 'auto';
-  pp.style.pointerEvents = 'auto';
-
-  // busy wrapper that forwards the event
-  function withBusy(fn) {
-    return async function (e) {
-      console.log('[listen] handler entered');
-      if (busy) return;
-      busy = true; pp.disabled = true; panel.style.opacity = '.85';
-      try { await fn(e); } finally {
-        setTimeout(() => { busy = false; pp.disabled = false; panel.style.opacity = '1'; }, 500);
-      }
-    };
-  }
-
-  async function handleClick(e) {
-    console.log('[listen] click', { shift: e?.shiftKey });
-    if (e) { e.preventDefault(); e.stopPropagation(); }
-    const BASE = await getBase();
-    if (!e?.shiftKey) {
-      title.textContent = 'Previewing…';
-      await previewClipInline(BASE);
-      return;
-    }
-    title.textContent = 'Reading full article…';
-    const a = ensureDockedAudio();
-    a.src = `${BASE}/read?url=${encodeURIComponent(location.href)}`;
-    try { await a.play(); } catch {}
-  }
-
-  const onClick = withBusy(handleClick);
-  // bind multiple routes so page overlays can't eat the event
-  pp.addEventListener('click', onClick, { capture: true });
-  pp.addEventListener('pointerdown', (e) => { if (e.button === 0) onClick(e); }, { capture: true });
-  // keyboard accessibility
-  pp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(e); });
-  // delegation fallback if node swapped
-  panel.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#listen-pp')) onClick(e); }, { capture: true });
-
-  console.log('[listen] panel bound on', location.hostname);
+  console.log('[listen] mini-player mounted on', location.hostname);
 })();
