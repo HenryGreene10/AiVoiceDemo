@@ -1,12 +1,15 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Listen Options</title>
-<style>body{font:14px system-ui;margin:20px} input{width:420px} button{margin-left:8px}</style>
-<h1>Backend</h1>
-<p>Set the base URL your button calls (local or HTTPS deploy).</p>
-<input id="base" placeholder="http://127.0.0.1:3000">
-<button id="save">Save</button>
-<button id="test">Test</button>
-<button id="reset">Reset</button>
-<div id="status" style="margin-top:10px;"></div>
+<style>body{font:14px system-ui;margin:20px} input{width:420px;display:block;margin:6px 0} label{display:block;margin-top:12px} button{margin-top:12px}</style>
+
+<!-- In listen-pill/options.html, inside your settings form -->
+<label>API Base</label>
+<input id="apiBase" placeholder="http://localhost:8000" />
+
+<label>Voice ID (ElevenLabs)</label>
+<input id="voiceId" placeholder="replace with your voice id" />
+
+<button id="saveBtn">Save</button>
+
 <script src="options.js"></script>

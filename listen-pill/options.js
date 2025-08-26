@@ -1,27 +1,24 @@
-const $ = (s)=>document.querySelector(s);
-const key = "listen_base";
-const def = "http://127.0.0.1:3000";
+// listen-pill/options.js
+(() => {
+  const apiBaseEl = document.getElementById("apiBase");
+  const voiceIdEl = document.getElementById("voiceId");
+  const saveBtn = document.getElementById("saveBtn");
 
-async function load(){
-  const d = await chrome.storage.sync.get(key);
-  $("#base").value = d[key] || def;
-}
-async function save(){
-  const v = $("#base").value.replace(/\/+$/,"");
-  await chrome.storage.sync.set({ [key]: v });
-  $("#status").textContent = "Saved.";
-  setTimeout(()=>$("#status").textContent="", 1200);
-}
-async function test(){
-  const v = $("#base").value.replace(/\/+$/,"");
-  try{
-    const r = await fetch(`${v}/health`, { cache:"no-store" });
-    $("#status").textContent = r.ok ? "✅ /health OK" : `❌ ${r.status}`;
-  }catch(e){ $("#status").textContent = "❌ not reachable"; }
-}
-async function reset(){ $("#base").value = def; await save(); }
+  // load
+  chrome.storage.sync.get(["apiBase", "voiceId"], (cfg) => {
+    apiBaseEl.value = cfg.apiBase || "http://localhost:8000";
+    voiceIdEl.value = cfg.voiceId || "";
+  });
 
-$("#save").onclick = save;
-$("#test").onclick = test;
-$("#reset").onclick = reset;
-load();
+  // save
+  saveBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    chrome.storage.sync.set(
+      { apiBase: apiBaseEl.value.trim(), voiceId: voiceIdEl.value.trim() },
+      () => {
+        saveBtn.textContent = "Saved ✓";
+        setTimeout(() => (saveBtn.textContent = "Save"), 1200);
+      }
+    );
+  });
+})();

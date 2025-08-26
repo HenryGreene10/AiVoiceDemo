@@ -34,8 +34,9 @@ ALLOWED_ORIGINS_SET = set([o.strip() for o in ALLOW_ORIGINS.split(",") if o.stri
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(ALLOWED_ORIGINS_SET) if ALLOWED_ORIGINS_SET else ["*"],
-    allow_methods=["*"], allow_headers=["*"]
+    allow_origins=["*"],   # dev only; lock down later
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -182,7 +183,7 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
             write_stream_row(int(time.time()*1000), "mem", 0, len(cache[h]), model_id, h)
         except Exception:
             pass
-        return Response(content=cache[h], media_type="audio/mpeg")
+        return Response(content=cache[h], media_type="audio/mpeg", headers={"x-cache-hit": "true"})
     # disk cache
     if p.exists():
         size = p.stat().st_size
@@ -193,16 +194,16 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
             write_stream_row(int(time.time()*1000), "disk", 0, size, model_id, h)
         except Exception:
             pass
-        return Response(content=data, media_type="audio/mpeg")
+        return Response(content=data, media_type="audio/mpeg", headers={"x-cache-hit": "true"})
 
     lock = get_lock(h)
     async with lock:
         if h in cache:
-            return Response(content=cache[h], media_type="audio/mpeg")
+            return Response(content=cache[h], media_type="audio/mpeg", headers={"x-cache-hit": "true"})
         if p.exists():
             data = p.read_bytes()
             cache.put(h, data)
-            return Response(content=data, media_type="audio/mpeg")
+            return Response(content=data, media_type="audio/mpeg", headers={"x-cache-hit": "true"})
 
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
         headers = {
@@ -261,7 +262,7 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
                     except Exception as e:
                         print({"event":"cache_finalize_error","err":str(e)})
 
-        return StreamingResponse(gen(), media_type="audio/mpeg")
+        return StreamingResponse(gen(), media_type="audio/mpeg", headers={"x-cache-hit": "false"})
 
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
