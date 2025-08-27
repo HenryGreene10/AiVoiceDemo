@@ -188,35 +188,26 @@
       const title = articleTitle(); titleEl.textContent = title;
       const body  = pagePreviewText(1200);
       const text  = `${title ? title + '. ' : ''}${body || 'This is a preview.'}`;
+
       const u = new URL(`${apiBase}/tts`);
-      u.searchParams.set('model', model);
       u.searchParams.set('text', text);
+      // optional params your server may read later:
+      u.searchParams.set('model', model);
+      if (voiceId) u.searchParams.set('voice', voiceId);
       u.searchParams.set('stability', stability);
       u.searchParams.set('similarity', similarity);
       u.searchParams.set('style', style);
       u.searchParams.set('opt_latency', opt);
-      if (voiceId) u.searchParams.set('voice', voiceId);
-      return u.toString(); // server streams audio
+
+      return u.toString(); // <audio src> will stream this
     }
   
     async function fullArticle() {
-      const isLocal = /^localhost$|^127\.0\.0\.1$/.test(location.hostname);
-      const title = articleTitle(); titleEl.textContent = title;
-      if (isLocal) {
-        const body = cleanStoryText(pagePreviewText(20000));
-        const text = `${title ? title + '. ' : ''}${body}`;
-        const u = new URL(`${apiBase}/tts`);
-        u.searchParams.set('model', model);
-        u.searchParams.set('text', text);
-        u.searchParams.set('stability', stability);
-        u.searchParams.set('similarity', similarity);
-        u.searchParams.set('style', style);
-        u.searchParams.set('opt_latency', opt);
-        if (voiceId) u.searchParams.set('voice', voiceId);
-        return u.toString();
-      }
-      const url = `${apiBase}/read?url=${encodeURIComponent(location.href)}&model=${encodeURIComponent(model)}${voiceId ? `&voice=${encodeURIComponent(voiceId)}` : ''}`;
-      return url;
+      const u = new URL(`${apiBase}/read_chunked`);
+      u.searchParams.set('url', location.href);
+      if (voiceId) u.searchParams.set('voice', voiceId);
+      u.searchParams.set('model', model);
+      return u.toString(); // audio stream
     }
   
     async function ensureAudioAndPlay(src) {
@@ -282,7 +273,9 @@
       if (!player.classList.contains('open')) openPlayer();
   
       try {
-        const src = e.shiftKey ? await fullArticle() : await previewClip();
+        const previewEnabled = ((ds.preview || 'off') + '').toLowerCase() === 'on';
+        // Product default: full article. If you want a dev preview, set data-preview="on".
+        const src = (previewEnabled && !e.shiftKey) ? await previewClip() : await fullArticle();
         await ensureAudioAndPlay(src);
       } catch (err) {
         console.error(err);
@@ -293,6 +286,13 @@
       }
     });
   
+    // hide Shift hint unless preview is on
+    const previewEnabled = ((ds.preview || 'off') + '').toLowerCase() === 'on';
+    if (!previewEnabled) {
+      const hint = shadow.getElementById('/* your hint element id */') || shadow.querySelector('.hint');
+      if (hint) hint.style.display = 'none';
+    }
+
     // --- Public API (optional) ---
     window.TTSWidget = {
       open:  () => openPlayer(),

@@ -1,5 +1,5 @@
 import re
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 
 
 NEG = {"dies","dead","death","shooting","war","massacre","earthquake","flood","famine","injured","tragedy","lawsuit","bankrupt","recall","layoffs","crash","toxic","drought","meltdown"}
@@ -41,4 +41,60 @@ def apply_ssml(text: str, tone: str) -> Tuple[str, Dict]:
 def shape_text_for_tone(text: str, tone: str) -> Tuple[str, Dict]:
     return apply_ssml(text, tone)
 
+
+CAPTION_PREFIXES = (
+    "Photo:", "Photograph:", "Image:", "Illustration:", "Credit:",
+    "Advertisement", "Ads by", "Subscribe", "Read more", "Recommended"
+)
+
+def strip_junk(text: str) -> str:
+    if not text: return ""
+    # Remove bracketed citations [1], [2]
+    text = re.sub(r"\[\d+\]", "", text)
+    # Remove “(IPA …)” / “(pronunciation …)” / “(/…/)”
+    text = re.sub(r"\s*\((?:IPA|pronunciation|listen|/)[^)]+\)\s*", " ", text, flags=re.I)
+    # Remove raw URLs
+    text = re.sub(r"https?://\S+", "", text)
+    # Remove “[citation needed]” etc.
+    text = re.sub(r"\[(?:citation|clarification|verification)\s+needed\]", "", text, flags=re.I)
+    # Drop obvious caption/utility lines
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith(CAPTION_PREFIXES)]
+    text = " ".join(lines)
+    # Normalize spacing/punctuation
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"([,.;:!?])(?=\S)", r"\1 ", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return text
+
+def build_narration(title: str, author: Optional[str], body: str) -> str:
+    # Clear, audible intro → short pause → story
+    header = f"{title.strip().rstrip('.')} . "
+    if author and author.strip():
+        header += f"By {author.strip().rstrip('.')} . "
+    # Light “prosody scaffolding”: break long sentences; add clause pauses
+    body = re.sub(r"[,;] ", ", ", body)               # keep commas natural
+    body = re.sub(r"\b—\b", ", ", body)               # em-dash → pause
+    body = re.sub(r"\s*\(\s*[^)]+\)\s*", " ", body)   # parenthetical aside
+    return f"{header}\n{body}".strip()
+
+def prepare_article(title: str, author: Optional[str], text: str) -> str:
+    return build_narration(strip_junk(title or "Untitled"),
+                           author or "",
+                           strip_junk(text or ""))
+
+
+def prosody_settings_for(title: str, body: str) -> Dict:
+    style = 0.40
+    stability = 0.38
+    similarity = 0.88
+    if "?" in (title or "") or "!" in (title or ""):
+        style += 0.05
+    if len(body or "") < 600:
+        stability += 0.05
+    return {
+        "stability": round(stability, 2),
+        "similarity_boost": round(similarity, 2),
+        "style": round(style, 2),
+        "use_speaker_boost": True,
+    }
 

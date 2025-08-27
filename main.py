@@ -8,11 +8,49 @@ from fastapi.responses import Response, StreamingResponse, JSONResponse, FileRes
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import Query
-import trafilatura, re, requests as http
+import trafilatura, re, requests as http, json
+from trafilatura.metadata import extract_metadata
+from typing import Tuple
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 from fastapi.staticfiles import StaticFiles
 from metrics import write_stream_row
+try:
+    from src.prosody import prepare_article
+except Exception:
+    from prosody import prepare_article
+
+# --- Sentence chunking for long articles
+SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+')
+
+def chunk_by_sentence(text: str, target=1200, hard_max=1600):
+    parts = []
+    cur = ""
+    for sent in SENTENCE_SPLIT.split(text):
+        if not sent:
+            continue
+        if len(sent) > hard_max:
+            while len(sent) > 0:
+                take = sent[:hard_max]
+                parts.append((cur + " " + take).strip() if cur else take)
+                cur = ""
+                sent = sent[hard_max:]
+            continue
+        if len(cur) + 1 + len(sent) <= target:
+            cur = (cur + " " + sent).strip() if cur else sent
+        else:
+            if cur:
+                parts.append(cur)
+            cur = sent
+    if cur:
+        parts.append(cur)
+    return parts
+
+async def concat_stream(chunks, voice_id, model_id):
+    for chunk in chunks:
+        resp = await stream_tts_for_text(chunk, voice_id=voice_id, model_id=model_id)
+        async for b in resp.body_iterator:   # type: ignore
+            yield b
 
 # --- config / env
 load_dotenv(".env")
@@ -20,8 +58,9 @@ API_KEY = os.getenv("ELEVENLABS_API_KEY")
 assert API_KEY, "Set ELEVENLABS_API_KEY in .env"
 VOICE_ID = "EQu48Nbp4OqDxsnYh27f"  # your default voice
 MODEL_ID = "eleven_turbo_v2"
-CACHE_DIR = os.path.join(os.getcwd(), "cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
+# cache dir as Path, ensure it exists
+CACHE_DIR = Path(os.getenv("CACHE_DIR", "./.cache"))
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 1600  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
@@ -100,6 +139,38 @@ def fetch_url(url: str, retries: int = 2, timeout: int = 15) -> str:
             last_err = e
             time.sleep(0.6 * (i + 1))
     raise HTTPException(status_code=502, detail=f"Fetch failed: {last_err}")
+
+# --- extract article cleanly (title, author, text)
+def extract_article(url: str) -> Tuple[str, str, str]:
+    """Return (title, author, text) using trafilatura with safe fallbacks."""
+    downloaded = trafilatura.fetch_url(url)
+    if not downloaded:
+        raise HTTPException(400, detail="Unable to fetch URL")
+
+    # Body text: prefer plain text (more reliable than output='json')
+    text = trafilatura.extract(
+        downloaded,
+        output="txt",
+        include_comments=False,
+        include_tables=False,
+        include_links=False,
+    ) or ""
+
+    # Metadata: be tolerant to missing/varied shapes
+    title = ""; author = ""
+    try:
+        md = extract_metadata(downloaded)
+        if md:
+            title = (getattr(md, "title", "") or "").strip()
+            a = getattr(md, "author", None) or getattr(md, "authors", None)
+            if isinstance(a, (list, tuple)):
+                author = ", ".join([x for x in a if x]).strip()
+            else:
+                author = (a or "").strip()
+    except Exception:
+        pass
+
+    return title, author, text
 
 # keep a single async HTTP client alive for connection reuse (lower TTFB)
 @app.on_event("startup")
@@ -830,28 +901,25 @@ async def read(req: ReadRequest, request: Request):
     return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID, voice_settings=voice_settings, tone=tone)
 
 @app.get("/read")
-def read(
-    url: str = Query(...),
-    voice: str = Query(""),
-    model: str = Query("eleven_turbo_v2"),
-    stability: float = Query(0.35),
-    similarity: float = Query(0.75),
-    style: float = Query(0.40),
-    speaker_boost: bool = Query(True),
-    opt_latency: int = Query(2),
-):
-    html = fetch_url(url)
-    extracted = trafilatura.extract(html) or ""
-    title = re.search(r"<title>(.*?)</title>", html, flags=re.I|re.S)
-    title_text = (title.group(1).strip() if title else "") or ""
-    full_text = (title_text + ". " if title_text else "") + extracted
-    if not full_text.strip():
-        raise HTTPException(status_code=422, detail="Could not extract readable text from URL.")
-    if not voice:
-        voice = os.environ.get("ELEVENLABS_VOICE", "")
-        if not voice:
-            raise HTTPException(status_code=400, detail="Voice not provided.")
-    return stream_with_cache(full_text, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+async def read(url: str, voice: str | None = None, model: str | None = None):
+    title, author, text = extract_article(url)
+    narration = prepare_article(title, author, text)
+    # stream_tts_for_text is async and already returns a StreamingResponse
+    return await stream_tts_for_text(
+        narration,
+        voice_id=voice or VOICE_ID,
+        model_id=model or MODEL_ID,
+    )
+
+@app.get("/read_chunked")
+async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+    title, author, text = extract_article(url)
+    narration = prepare_article(title, author, text)
+    chunks = chunk_by_sentence(narration, target=1200, hard_max=1600)
+    return StreamingResponse(
+        concat_stream(chunks, voice or VOICE_ID, model or MODEL_ID),
+        media_type="audio/mpeg"
+    )
 
 
 # _split_text_for_tts: reserved for future chunked synthesis
