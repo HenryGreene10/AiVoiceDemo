@@ -69,13 +69,31 @@ def preprocess_for_tts(text: str) -> str:
 
 # --- Robust fetch for /read
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
-HDRS = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"}
+BASE_HDRS = {
+    "User-Agent": UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+}
+
+def normalize_url(u: str) -> str:
+    u = u.strip()
+    if not re.match(r"^https?://", u, flags=re.I):
+        u = "https://" + u
+    return u
 
 def fetch_url(url: str, retries: int = 2, timeout: int = 15) -> str:
     last_err = None
+    url = normalize_url(url)
+    hdrs = dict(BASE_HDRS)
+    hdrs["Referer"] = url
     for i in range(retries + 1):
         try:
-            r = http.get(url, headers=HDRS, timeout=timeout)
+            r = http.get(url, headers=hdrs, timeout=timeout, allow_redirects=True)
+            if r.status_code in (403, 406) and "text/html" not in r.headers.get("Content-Type",""):
+                hdrs2 = dict(hdrs); hdrs2["Accept"] = "text/html,*/*;q=0.5"
+                r = http.get(url, headers=hdrs2, timeout=timeout, allow_redirects=True)
             r.raise_for_status()
             return r.text
         except Exception as e:
@@ -307,15 +325,84 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
         return StreamingResponse(gen(), media_type="audio/mpeg", headers={"x-cache-hit": "false"})
 
 # --- Caching metrics and unified streamer
+MAX_CACHE_BYTES = int(os.getenv("CACHE_MAX_BYTES", str(2 * 1024**3)))
+MAX_CACHE_FILES = int(os.getenv("CACHE_MAX_FILES", "2000"))
+
 metrics = {
     "tts_requests": 0,
     "tts_errors": 0,
+    "tts_cache_hits": 0,
+    "tts_cache_misses": 0,
     "tts_first_byte_ms": [],
 }
 
-def eleven_stream(text: str, voice: str, model: str,
-                  stability: float, similarity: float, style: float,
-                  speaker_boost: bool, opt_latency: int):
+def _cache_inventory():
+    total = 0
+    items = []
+    for name in os.listdir(CACHE_DIR):
+        if not name.endswith(".mp3"):
+            continue
+        p = os.path.join(CACHE_DIR, name)
+        try:
+            st = os.stat(p)
+        except FileNotFoundError:
+            continue
+        items.append((st.st_mtime, p, st.st_size))
+        total += st.st_size
+    items.sort(key=lambda x: x[0])
+    return total, items
+
+def get_cache_stats():
+    total, items = _cache_inventory()
+    return {
+        "files": len(items),
+        "bytes": total,
+        "bytes_gb": round(total / (1024**3), 3),
+        "oldest_ts": items[0][0] if items else None,
+        "newest_ts": items[-1][0] if items else None,
+        "budget_bytes": MAX_CACHE_BYTES,
+        "budget_files": MAX_CACHE_FILES,
+    }
+
+def enforce_cache_budget(max_bytes=MAX_CACHE_BYTES, max_files=MAX_CACHE_FILES):
+    total, items = _cache_inventory()
+    evicted = 0
+    removed_bytes = 0
+    i = 0
+    while (total - removed_bytes) > max_bytes or (max_files and (len(items) - evicted) > max_files):
+        if i >= len(items):
+            break
+        _, path, sz = items[i]
+        i += 1
+        try:
+            os.remove(path)
+            evicted += 1
+            removed_bytes += sz
+        except FileNotFoundError:
+            pass
+    return {"evicted": evicted, "bytes_freed": removed_bytes}
+
+def stream_with_cache(text: str, voice: str, model: str,
+                      stability: float, similarity: float, style: float,
+                      speaker_boost: bool, opt_latency: int):
+    """
+    Streams TTS audio from ElevenLabs, with:
+      - preflight status check (no streaming starts if upstream is an error)
+      - first-chunk prefetch (we have a chunk before returning StreamingResponse)
+      - never-raise-after-yield (avoid 'response already started' runtime error)
+      - write-through cache with budget eviction
+    """
+    metrics["tts_requests"] += 1
+    clean = preprocess_for_tts(text)
+
+    key  = _cache_key(clean, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+    path = os.path.join(CACHE_DIR, f"{key}.mp3")
+    if os.path.exists(path):
+        metrics["tts_cache_hits"] += 1
+        return FileResponse(path, media_type="audio/mpeg", headers={"X-Cache": "HIT"})
+
+    metrics["tts_cache_misses"] += 1
+
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
     headers = {
         "xi-api-key": os.environ.get("ELEVENLABS_API_KEY", ""),
@@ -323,7 +410,7 @@ def eleven_stream(text: str, voice: str, model: str,
         "Content-Type": "application/json",
     }
     payload = {
-        "text": text,
+        "text": clean,
         "model_id": model,
         "optimize_streaming_latency": int(opt_latency),
         "voice_settings": {
@@ -333,14 +420,64 @@ def eleven_stream(text: str, voice: str, model: str,
             "use_speaker_boost": bool(speaker_boost),
         },
     }
-    r = http.post(url, headers=headers, json=payload, stream=True, timeout=60)
+
+    try:
+        r = http.post(url, headers=headers, json=payload, stream=True, timeout=60)
+    except Exception as e:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail=f"Upstream connection failed: {e}")
+
     if r.status_code in (401, 402, 429):
-        detail = f"Upstream TTS error {r.status_code} (check key/credits/limits)"
-        raise HTTPException(status_code=429, detail=detail)
-    r.raise_for_status()
-    for chunk in r.iter_content(32 * 1024):
-        if chunk:
-            yield chunk
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=429, detail=f"Upstream TTS error {r.status_code}. Check key/credits/limits.")
+    try:
+        r.raise_for_status()
+    except Exception as e:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail=f"TTS upstream error: {e}")
+
+    start = time.time()
+    chunk_iter = r.iter_content(32 * 1024)
+    first_chunk = None
+    try:
+        for c in chunk_iter:
+            if c:
+                first_chunk = c
+                metrics["tts_first_byte_ms"].append(int((time.time() - start) * 1000))
+                break
+    except Exception as e:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail=f"TTS fetch failed before first audio: {e}")
+
+    if not first_chunk:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail="Upstream produced no audio.")
+
+    tmp = path + ".part"
+
+    def gen():
+        complete = False
+        try:
+            with open(tmp, "wb") as f:
+                f.write(first_chunk)
+                yield first_chunk
+                for c in chunk_iter:
+                    if not c:
+                        continue
+                    f.write(c)
+                    yield c
+            os.replace(tmp, path)
+            complete = True
+            enforce_cache_budget()
+        except Exception:
+            try:
+                if not complete and os.path.exists(tmp):
+                    os.remove(tmp)
+            except:
+                pass
+            return
+
+    return StreamingResponse(gen(), media_type="audio/mpeg", headers={"X-Cache": "MISS"})
 
 def _cache_key(text: str, voice: str, model: str,
                stability: float, similarity: float, style: float,
@@ -355,52 +492,125 @@ def stream_with_cache(text: str, voice: str, model: str,
                       speaker_boost: bool, opt_latency: int):
     metrics["tts_requests"] += 1
     clean = preprocess_for_tts(text)
-    key = _cache_key(clean, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+
+    key  = _cache_key(clean, voice, model, stability, similarity, style, speaker_boost, opt_latency)
     path = os.path.join(CACHE_DIR, f"{key}.mp3")
     if os.path.exists(path):
-        return FileResponse(path, media_type="audio/mpeg")
+        metrics["tts_cache_hits"] += 1
+        return FileResponse(path, media_type="audio/mpeg", headers={"X-Cache": "HIT"})
+
+    metrics["tts_cache_misses"] += 1
+
+    # ----- preflight (no bytes sent to client yet)
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
+    headers = {
+        "xi-api-key": os.environ.get("ELEVENLABS_API_KEY", ""),
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "text": clean,
+        "model_id": model,
+        "optimize_streaming_latency": int(opt_latency),
+        "voice_settings": {
+            "stability": float(stability),
+            "similarity_boost": float(similarity),
+            "style": float(style),
+            "use_speaker_boost": bool(speaker_boost),
+        },
+    }
+
+    try:
+        r = http.post(url, headers=headers, json=payload, stream=True, timeout=60)
+    except Exception as e:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail=f"Upstream connection failed: {e}")
+
+    if r.status_code in (401, 402, 429):
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=429, detail=f"Upstream TTS error {r.status_code}. Check key/credits/limits.")
+    try:
+        r.raise_for_status()
+    except Exception as e:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail=f"TTS upstream error: {e}")
+
+    # Prefetch first chunk before starting response
+    start = time.time()
+    chunk_iter = r.iter_content(32 * 1024)
+    first_chunk = None
+    try:
+        for c in chunk_iter:
+            if c:
+                first_chunk = c
+                metrics["tts_first_byte_ms"].append(int((time.time() - start) * 1000))
+                break
+    except Exception as e:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail=f"TTS fetch failed before first audio: {e}")
+
+    if not first_chunk:
+        metrics["tts_errors"] += 1
+        raise HTTPException(status_code=502, detail="Upstream produced no audio.")
 
     tmp = path + ".part"
-    first_byte = {"seen": False}
-    start = time.time()
-
     def gen():
+        complete = False
         try:
             with open(tmp, "wb") as f:
-                for chunk in eleven_stream(clean, voice, model, stability, similarity, style, speaker_boost, opt_latency):
-                    if not first_byte["seen"]:
-                        first_byte["seen"] = True
-                        metrics["tts_first_byte_ms"].append(int((time.time() - start) * 1000))
-                    f.write(chunk)
-                    yield chunk
+                f.write(first_chunk);  yield first_chunk
+                for c in chunk_iter:
+                    if not c: continue
+                    f.write(c);         yield c
             os.replace(tmp, path)
-        except HTTPException:
-            metrics["tts_errors"] += 1
-            if os.path.exists(tmp):
-                try: os.remove(tmp)
-                except: pass
-            raise
-        except Exception as e:
-            metrics["tts_errors"] += 1
-            if os.path.exists(tmp):
-                try: os.remove(tmp)
-                except: pass
-            raise HTTPException(status_code=502, detail=f"TTS streaming failed: {e}")
+            complete = True
+            enforce_cache_budget()
+        except Exception:
+            try:
+                if not complete and os.path.exists(tmp):
+                    os.remove(tmp)
+            except:
+                pass
+            return  # do NOT raise once streaming has begun
 
-    return StreamingResponse(gen(), media_type="audio/mpeg")
+    return StreamingResponse(gen(), media_type="audio/mpeg", headers={"X-Cache": "MISS"})
+
+
+@app.get("/cache/stats")
+def cache_stats():
+    s = get_cache_stats()
+    return {**s, "hits": metrics["tts_cache_hits"], "misses": metrics["tts_cache_misses"]}
+
+@app.post("/cache/evict")
+def cache_evict():
+    return enforce_cache_budget()
+
+@app.delete("/cache")
+def cache_clear():
+    n = 0
+    for name in os.listdir(CACHE_DIR):
+        if not name.endswith(".mp3"):
+            continue
+        p = os.path.join(CACHE_DIR, name)
+        try:
+            os.remove(p); n += 1
+        except FileNotFoundError:
+            pass
+    return {"cleared": n}
 
 @app.get("/metrics")
 def get_metrics():
-    avg_fb = None
     arr = metrics["tts_first_byte_ms"]
-    if arr:
-        avg_fb = int(sum(arr) / max(1, len(arr)))
-    cache_count = sum(1 for n in os.listdir(CACHE_DIR) if n.endswith(".mp3"))
+    avg_fb = int(sum(arr) / max(1, len(arr))) if arr else None
+    cache = get_cache_stats()
     return {
         "tts_requests": metrics["tts_requests"],
         "tts_errors": metrics["tts_errors"],
+        "tts_cache_hits": metrics["tts_cache_hits"],
+        "tts_cache_misses": metrics["tts_cache_misses"],
         "avg_first_byte_ms": avg_fb,
-        "cache_files": cache_count,
+        "cache_files": cache["files"],
+        "cache_bytes_gb": cache["bytes_gb"],
     }
 
 # --- TTS request (streaming via shared function)
@@ -418,7 +628,7 @@ async def tts(req: TTSRequest, request: Request):
 @app.get("/tts")
 def tts(
     text: str = Query(..., max_length=20000),
-    voice: str = Query(...),
+    voice: str | None = Query(None),
     model: str = Query("eleven_turbo_v2"),
     stability: float = Query(0.35),
     similarity: float = Query(0.75),
@@ -426,6 +636,9 @@ def tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
+    voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
+    if not voice:
+        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE not set).")
     return stream_with_cache(text, voice, model, stability, similarity, style, speaker_boost, opt_latency)
 
 # --- extract
@@ -643,3 +856,59 @@ def read(
 
 # _split_text_for_tts: reserved for future chunked synthesis
 
+
+@app.get("/diag")
+def diag():
+    key = os.environ.get("ELEVENLABS_API_KEY", "")
+    voice = os.environ.get("ELEVENLABS_VOICE", "")
+    return {
+        "api_key_set": bool(key),
+        "voice_set": bool(voice),
+        "voice_prefix": (voice[:8] + "…") if voice else ""
+    }
+
+@app.get("/voices")
+def voices():
+    r = http.get(
+        "https://api.elevenlabs.io/v1/voices",
+        headers={"xi-api-key": os.environ.get("ELEVENLABS_API_KEY","")},
+        timeout=20,
+    )
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
+
+@app.get("/tts_full")
+def tts_full(
+    text: str = Query(..., max_length=20000),
+    voice: str | None = Query(None),
+    model: str = Query("eleven_turbo_v2"),
+    stability: float = Query(0.35),
+    similarity: float = Query(0.75),
+    style: float = Query(0.40),
+    speaker_boost: bool = Query(True),
+):
+    voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
+    if not voice:
+        raise HTTPException(status_code=400, detail="Voice not provided.")
+    clean = preprocess_for_tts(text)
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}"
+    headers = {
+        "xi-api-key": os.environ.get("ELEVENLABS_API_KEY",""),
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "text": clean,
+        "model_id": model,
+        "voice_settings": {
+            "stability": float(stability),
+            "similarity_boost": float(similarity),
+            "style": float(style),
+            "use_speaker_boost": bool(speaker_boost),
+        },
+    }
+    r = http.post(url, headers=headers, json=payload, timeout=60)
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return Response(content=r.content, media_type="audio/mpeg")
