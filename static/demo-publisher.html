@@ -1,16 +1,48 @@
-<!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Listen SDK Demo</title>
-<p>Demo page. The pill should appear at the configured position. Try click (preview) and Shift-click (full).</p>
-<script src="/static/listen-sdk.v1.js"
-        data-base="http://127.0.0.1:3000"
-        data-position="right-bottom"
-        data-theme="dark"
-        defer></script>
-<main style="max-width:600px;line-height:1.5">
-  <h1>Sample Article</h1>
-  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus nec iaculis mauris. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Integer facilisis.</p>
-  <p>Morbi tempus, velit nec fermentum tristique, urna urna feugiat lorem, sit amet consequat mi mi non risus. Nulla facilisi. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas.</p>
+<!doctype html><meta charset="utf-8">
+<title>Demo Publisher</title>
+<main style="max-width:680px;margin:40px auto;font:16px/1.6 system-ui">
+  <h1>Demo Article</h1>
+  <p>This page simulates a publisher site to test the embeddable widget.</p>
+  <p>Click “Listen” for a short preview. Shift+Click for full article.</p>
 </main>
+<script defer src="/static/tts-widget.v1.js"
+  data-base="http://127.0.0.1:3000"
+  data-voice="EQu48Nbp4OqDxsnYh27f"
+  data-model="eleven_turbo_v2"
+  data-position="bl"
+  data-theme="dark"
+  data-stability="0.35"
+  data-similarity="0.75"
+  data-style="0.40"
+  data-opt="2"
+  data-startpad="250"></script>
 
+<!-- Small player iframe embed example -->
+<iframe
+  src="/static/tts-iframe.html?base=http://127.0.0.1:3000&voice=EQu48Nbp4OqDxsnYh27f&model=eleven_turbo_v2&url="
+  style="position:fixed; right:16px; bottom:64px; width:340px; height:140px; border:0; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.25);"
+  sandbox="allow-scripts allow-same-origin"
+  id="tts_iframe">
+</iframe>
+
+<!-- Button to control iframe (optional) -->
+<button id="tts_btn" style="position:fixed; right:16px; bottom:16px; padding:10px 14px; border-radius:12px; background:#111; color:#fff; border:0;">Listen</button>
+
+<script>
+  const frame = document.getElementById('tts_iframe');
+  const btn   = document.getElementById('tts_btn');
+
+  // send preview text (optional; improves quality)
+  const title  = document.querySelector('h1')?.textContent?.trim() || document.title || 'Untitled';
+  const paras  = Array.from(document.querySelectorAll('article p, main p, p')).slice(0,12).map(p=>p.innerText.trim()).join(' ');
+  frame.contentWindow.postMessage({ type:'tts:setPreviewText', payload: `${title}. ${paras}` }, '*');
+
+  btn.addEventListener('click', () => {
+    frame.contentWindow.postMessage({ type: 'tts:playPreview' }, '*');
+  });
+
+  // Shift+Click → full article (server-side fetch if you pass &url=… in iframe src)
+  btn.addEventListener('click', (e) => {
+    if (e.shiftKey) frame.contentWindow.postMessage({ type:'tts:playFull' }, '*');
+  });
+</script>

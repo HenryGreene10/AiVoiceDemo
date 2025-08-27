@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8">
+<title>TTS Widget Iframe</title>
+<style>
+  body { margin:0; font: 14px/1.4 system-ui; color:#111; background:#fff; }
+  .player { width: 320px; max-width: 92vw; border-radius: 14px; background:#fff; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding:12px; }
+  .status { font:500 12px/1.2 system-ui; margin-bottom:8px; }
+  .topbar { position: fixed; bottom: 8px; right: 8px; }
+  .btn { cursor:pointer; padding:10px 14px; border-radius:12px; background:#111; color:#fff; border:none; }
+</style>
+<div class="player">
+  <div class="status" id="status">Ready</div>
+  <audio id="audio" controls preload="none"></audio>
+</div>
+<script src="/static/tts-iframe.js"></script>
