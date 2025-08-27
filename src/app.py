@@ -1,4 +1,5 @@
 import os
+import asyncio
 import time
 import hmac
 import hashlib
@@ -6,28 +7,30 @@ import base64
 import json
 from typing import Optional
 
-import boto3
+from fastapi.staticfiles import StaticFiles
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from mangum import Mangum
 
-from security import (
-    allowed_origins_set,
-    issue_token,
-    verify_token,
+from fastapi.security import (
+    OAuth2PasswordBearer,
+    HTTPBearer,
+    HTTPAuthorizationCredentials,
 )
-from storage import (
+from src.storage import (
     get_bucket_name,
     exists as s3_exists,
     put_audio,
     get_audio_url,
     current_cache_bytes,
     reap_lru_if_needed,
+    USE_LOCAL,
+    LOCAL_DIR,
 )
-from prosody import shape_text_for_tone, sentiment_from_title
-from metrics import append_stream_row
+from src.prosody import shape_text_for_tone, sentiment_from_title
+from src.metrics import append_stream_row
 
 try:
     import trafilatura
@@ -47,12 +50,34 @@ SECRETS_ELEVEN_KEY_NAME = os.getenv("ELEVENLABS_SECRET_NAME", "ELEVENLABS_API_KE
 
 app = FastAPI()
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+def allowed_origins_set():
+    """
+    Parse ALLOWED_ORIGINS env var.
+    - "*" or empty => return None (means allow all)
+    - otherwise split by comma and return a set of origins
+    """
+    raw = os.getenv("ALLOWED_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return None
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+origins = allowed_origins_set()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(allowed_origins_set()) if allowed_origins_set() else ["*"],
+    allow_origins=list(origins) if origins else ["*"],
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
+# Local cache static mount (for demo/dev without S3)
+if USE_LOCAL:
+    import pathlib
+    LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/cache", StaticFiles(directory=str(LOCAL_DIR)), name="cache")
 
 
 # --- secrets (cached on cold start)
@@ -247,6 +272,69 @@ async def synthesize(req: SynthReq, request: Request):
         pass
 
     return {"audioUrl": url, "cache": "miss"}
+
+
+# --- TTS endpoint (GET) ---
+ELEVEN_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
+if not ELEVEN_API_KEY:
+    raise RuntimeError("ELEVENLABS_API_KEY is not set")
+
+TTS_STREAM_URL = (
+    "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+    "?optimize_streaming_latency=2&output_format=mp3_44100_128"
+)
+
+
+async def synth_bytes(text: str, voice_id: str, model_id: str) -> bytes:
+    payload = {
+        "text": text,
+        "model_id": model_id,
+        "voice_settings": {"stability": 0.35, "similarity_boost": 0.7},
+    }
+    headers = {
+        "xi-api-key": ELEVEN_API_KEY,
+        "accept": "audio/mpeg",
+        "content-type": "application/json",
+    }
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                r = await client.post(
+                    TTS_STREAM_URL.format(voice_id=voice_id),
+                    headers=headers, json=payload
+                )
+                r.raise_for_status()
+                return r.content
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 500, 502, 503) and attempt < 2:
+                await asyncio.sleep(0.6 * (attempt + 1))
+                continue
+            raise
+
+
+def _cache_key(text: str, voice: str, model: str) -> str:
+    h = hashlib.sha256()
+    h.update(text.encode("utf-8"))
+    h.update(voice.encode("utf-8"))
+    h.update(model.encode("utf-8"))
+    return f"{h.hexdigest()}.mp3"
+
+
+@app.get("/api/tts")
+async def api_tts(
+    text: str = Query(..., min_length=1),
+    voice: str = Query(..., min_length=1),
+    model: str = Query("eleven_turbo_v2"),
+):
+    key = _cache_key(text, voice, model)
+    if await s3_exists(key):
+        url = await get_audio_url(key)
+        return {"url": url, "cached": True}
+
+    audio = await synth_bytes(text, voice, model)
+    await put_audio(key, audio)
+    url = await get_audio_url(key)
+    return {"url": url, "cached": False}
 
 
 # Lambda entrypoint

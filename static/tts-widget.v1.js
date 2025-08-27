@@ -5,7 +5,7 @@
     // --- Config from <script data-*> ---
     const script   = document.currentScript;
     const ds       = (script && script.dataset) || {};
-    const apiBase  = ((ds.base || 'http://127.0.0.1:3000') + '').replace(/\/+$/,'');
+    const apiBase  = ((ds.base || (location.origin || 'http://127.0.0.1:3000')) + '').replace(/\/+$/,'');
     const model    = (ds.model || 'eleven_turbo_v2') + '';
     const voiceId  = (ds.voice || '') + '';
     const stability = (ds.stability || '0.35') + '';
