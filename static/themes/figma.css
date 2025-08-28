@@ -1,0 +1,70 @@
+/* static/themes/figma.css — Figma-look skin for the Shadow DOM player */
+:root{
+    --bg:#ffffff; --fg:#111315; --muted:rgba(17,19,21,.7);
+    --border:rgba(0,0,0,.10); --shadow:0 25px 50px -12px rgba(0,0,0,.25);
+  
+    --card-w:600px; --radius:16px;
+    --pad-x:24px; --pad-x-sm:16px; --pad-top:16px; --pad-bot:12px;
+  
+    --bar-h:2px; --bar-bg:rgba(0,0,0,.20); --bar-fill: var(--fg);
+    --pp-size:44px; --pp-ink:var(--fg);
+  
+    --title-size:1rem; --title-size-sm:1.125rem; --title-weight:500;
+    --times-size:12px;
+  }
+  
+  .theme-dark{
+    --bg:#0b0f1a; --fg:#e5e7eb; --muted:#94a3b8;
+    --border:rgba(148,163,184,.18); --shadow:0 25px 50px -12px rgba(0,0,0,.45);
+    --bar-bg:rgba(255,255,255,.22);
+  }
+  
+  /* Card */
+  .tts-card{
+    width:calc(100% - 2rem); max-width:var(--card-w);
+    margin-inline:auto; background:var(--bg); color:var(--fg);
+    border-radius:var(--radius); border:1px solid var(--border);
+    box-shadow:var(--shadow); padding:var(--pad-top) var(--pad-x-sm) var(--pad-bot);
+  }
+  @media (min-width:640px){ .tts-card{ padding:var(--pad-top) var(--pad-x) var(--pad-bot);} }
+  
+  /* Header: close + centered title + spacer */
+  .tts-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .tts-title{ font-weight:var(--title-weight); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    text-align:center; flex:1 1 auto; padding:0 8px; font-size:var(--title-size); }
+  @media (min-width:640px){ .tts-title{ font-size:var(--title-size-sm);} }
+  .tts-close{ all:unset; cursor:pointer; width:24px; height:24px; display:grid; place-items:center; color:var(--fg); }
+  
+  .tts-status{ font:500 12px/1.2 system-ui; color:var(--muted); }
+  
+  /* Progress & times centered (75% on mobile, 50% on ≥640px) */
+  .tts-prog{ position:relative; height:var(--bar-h); border-radius:999px; background:var(--bar-bg);
+    cursor:pointer; user-select:none; margin:8px auto 6px; width:75%; }
+  @media (min-width:640px){ .tts-prog{ width:50%; } }
+  #pBuf,#pFill,#pHand{ position:absolute; top:0; left:0; height:100%; border-radius:999px; }
+  #pBuf{ background:rgba(0,0,0,.10); width:0%; }
+  .theme-dark #pBuf{ background:rgba(255,255,255,.18); }
+  #pFill{ background:var(--bar-fill); width:0%; }
+  #pHand{ display:none; }
+  
+  .tts-times{ display:flex; justify-content:space-between; margin:6px auto 0; width:75%;
+    font-size:var(--times-size); color:var(--fg); }
+  @media (min-width:640px){ .tts-times{ width:50%; } }
+  
+  /* Controls row */
+  .tts-ctrls{ display:flex; align-items:center; justify-content:center; gap:10px; padding:0 var(--pad-x-sm) 12px; }
+  @media (min-width:640px){ .tts-ctrls{ gap:12px; padding:0 var(--pad-x) 16px; } }
+  
+  /* Play/Pause (big, center) */
+  #ppBtn{ all:unset; cursor:pointer; width:var(--pp-size); height:var(--pp-size);
+    display:grid; place-items:center; border-radius:999px; color:var(--pp-ink); font-size:26px; line-height:1; }
+  
+  /* Icon buttons (rewind/ff/settings/expand) */
+  .icon-btn{ all:unset; cursor:pointer; display:grid; place-items:center; color:var(--fg); padding:8px; }
+  .icon-btn svg{ width:20px; height:20px; }
+  
+  /* Speed select (simple) */
+  .speed{ appearance:none; border:none; background:transparent; color:var(--fg);
+    font:600 12px/1 system-ui; padding:6px 4px; min-width:48px; text-align:center; }
+  .speed:focus{ outline: none; }
+  

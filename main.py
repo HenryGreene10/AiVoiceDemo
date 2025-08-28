@@ -2,9 +2,9 @@
 import os, hashlib, requests, time, httpx
 from pathlib import Path
 from collections import OrderedDict
-from dotenv import load_dotenv
+from dotenv import load_dotenv; 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import Query
@@ -13,6 +13,7 @@ from trafilatura.metadata import extract_metadata
 from typing import Tuple
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
+import re
 from fastapi.staticfiles import StaticFiles
 from metrics import write_stream_row
 try:
@@ -20,63 +21,153 @@ try:
 except Exception:
     from prosody import prepare_article
 
-# --- Sentence chunking for long articles
-SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+')
-
-def chunk_by_sentence(text: str, target=1200, hard_max=1600):
-    parts = []
-    cur = ""
-    for sent in SENTENCE_SPLIT.split(text):
-        if not sent:
-            continue
-        if len(sent) > hard_max:
-            while len(sent) > 0:
-                take = sent[:hard_max]
-                parts.append((cur + " " + take).strip() if cur else take)
-                cur = ""
-                sent = sent[hard_max:]
-            continue
-        if len(cur) + 1 + len(sent) <= target:
-            cur = (cur + " " + sent).strip() if cur else sent
-        else:
-            if cur:
-                parts.append(cur)
-            cur = sent
-    if cur:
-        parts.append(cur)
-    return parts
-
-async def concat_stream(chunks, voice_id, model_id):
-    for chunk in chunks:
-        resp = await stream_tts_for_text(chunk, voice_id=voice_id, model_id=model_id)
-        async for b in resp.body_iterator:   # type: ignore
-            yield b
-
 # --- config / env
 load_dotenv(".env")
-API_KEY = os.getenv("ELEVENLABS_API_KEY")
-assert API_KEY, "Set ELEVENLABS_API_KEY in .env"
-VOICE_ID = "EQu48Nbp4OqDxsnYh27f"  # your default voice
-MODEL_ID = "eleven_turbo_v2"
+from dotenv import load_dotenv; load_dotenv()
+API_KEY  = (os.getenv("ELEVENLABS_API_KEY","").strip())
+VOICE_ID = (os.getenv("VOICE_ID","").strip())
+MODEL_ID = (os.getenv("MODEL_ID","eleven_turbo_v2").strip())
 # cache dir as Path, ensure it exists
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "./.cache"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 1600  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
+
 
 # --- app
 app = FastAPI()
+
+# --- Helper that returns bytes for a chunk (no generator) ---
+async def tts_bytes(
+    text: str,
+    voice_id: str,
+    model_id: str,
+    voice_settings: dict | None = None,
+) -> bytes:
+    client: httpx.AsyncClient = app.state.http_client
+    payload = {
+        "text": text,
+        "model_id": model_id,
+        "voice_settings": voice_settings or {
+            "stability": 0.35,
+            "similarity_boost": 0.9,
+            "style": 0.35,
+            "use_speaker_boost": True,
+        },
+        "optimize_streaming_latency": 2,
+    }
+    headers = {
+        "xi-api-key": API_KEY,
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+    }
+
+    stream_url    = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+    nonstream_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+
+    # --- stream attempt
+    try:
+        resp = await client.post(stream_url, headers=headers, json=payload, timeout=60.0)
+    except Exception as e:
+        print({"event": "tts_conn_fail", "err": str(e)[:300]})
+        raise HTTPException(status_code=502, detail=f"TTS upstream connection failed: {e}")
+
+    if resp.status_code == 200 and resp.content:
+        return resp.content
+
+    body1 = (resp.text or "")[:500]
+    print({"event": "tts_upstream_err", "status": resp.status_code, "body": body1})
+
+    # --- non-stream fallback
+    resp2 = await client.post(nonstream_url, headers=headers, json=payload, timeout=60.0)
+    if resp2.status_code == 200 and resp2.content:
+        print({"event": "tts_nonstream_ok"})
+        return resp2.content
+
+    body2 = (resp2.text or "")[:500]
+    print({"event": "tts_nonstream_err", "status": resp2.status_code, "body": body2})
+
+    # Bubble the upstream reason
+    raise HTTPException(
+        status_code=resp2.status_code if resp2.status_code != 200 else 502,
+        detail=f"TTS error. stream {resp.status_code}: {body1}; nonstream {resp2.status_code}: {body2}",
+    )
+
+# --- Simple, robust sentence chunker ---
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+def chunk_by_sentence(s: str, target: int = 1200, hard_max: int = 1600) -> list[str]:
+    parts, cur, total = [], [], 0
+    for sent in re.split(SENTENCE_SPLIT, s):
+        sent = (sent or "").strip()
+        if not sent:
+            continue
+        if total + len(sent) > target and cur:
+            parts.append(" ".join(cur)); cur, total = [], 0
+        cur.append(sent); total += len(sent)
+        if total > hard_max:
+            parts.append(" ".join(cur)); cur, total = [], 0
+    if cur:
+        parts.append(" ".join(cur))
+    return parts
+
+@app.get("/read_chunked")
+async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+    # 1) Extract & prepare
+    title, author, text = extract_article(url)
+    cleaned = preprocess_for_tts(text or "")
+    narration = prepare_article(title, author, cleaned)
+
+    if not narration or len(narration.strip()) < 40:
+        raise HTTPException(status_code=422, detail="No narratable text extracted from page")
+
+    parts = chunk_by_sentence(narration, target=900, hard_max=1300)
+    if not parts:
+        raise HTTPException(status_code=422, detail="No narratable chunks produced")
+
+    v = voice or VOICE_ID
+    m = model or MODEL_ID
+
+    # 2) PREFETCH FIRST CHUNK to avoid 200/0B
+    try:
+        first_bytes = await tts_bytes(parts[0], v, m)
+        print({"event": "chunk_ok", "i": 0, "bytes": len(first_bytes)})
+    except Exception as e:
+        # Fail BEFORE starting the stream
+        raise HTTPException(status_code=502, detail=f"First chunk failed: {e}")
+
+    # 3) Stream: yield first prefetch, then fetch the rest one by one
+    async def multi():
+        # first chunk we already have
+        yield first_bytes
+        for i, part in enumerate(parts[1:], start=1):
+            try:
+                data = await tts_bytes(part, v, m)
+                print({"event": "chunk_ok", "i": i, "bytes": len(data)})
+                yield data
+            except Exception as e:
+                print({"event": "chunk_fail", "i": i, "err": str(e)[:300]})
+                break  # stop cleanly; do NOT raise once streaming has begun
+
+    return StreamingResponse(multi(), media_type="audio/mpeg")
+
 
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "").strip()
 ALLOWED_ORIGINS_SET = set([o.strip() for o in ALLOW_ORIGINS.split(",") if o.strip()])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # dev only; lock down later
-    allow_methods=["*"],
+    allow_origins=["*"],            # tighten later
+    allow_credentials=False,
+    allow_methods=["*"],            # important for preflight
     allow_headers=["*"],
 )
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -177,6 +268,16 @@ def extract_article(url: str) -> Tuple[str, str, str]:
 async def _startup():
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
     app.state.locks = {}
+    
+from fastapi.routing import APIRoute
+
+@app.on_event("startup")
+async def _list_routes():
+    routes = []
+    for r in app.router.routes:
+        if isinstance(r, APIRoute):
+            routes.append((r.path, sorted(list(r.methods))))
+    print({"routes": routes})
 
 @app.on_event("shutdown")
 async def _shutdown():
@@ -193,10 +294,46 @@ async def preflight(req: Request, path: str):
     }
     return Response(status_code=204, headers=headers)
 
-# --- health check
-@app.get("/health")
-def health():
-    return {"ok": True}
+# --- chunk by sentence
+def chunk_by_sentence(s: str, target: int = 1200, hard_max: int = 1600) -> list[str]:
+    parts, cur, total = [], [], 0
+    for sent in re.split(r"(?<=[.!?])\s+", s):
+        if not sent:
+            continue
+        if total + len(sent) > target and cur:
+            parts.append(" ".join(cur)); cur, total = [], 0
+        cur.append(sent); total += len(sent)
+        if total > hard_max:
+            parts.append(" ".join(cur)); cur, total = [], 0
+    if cur:
+        parts.append(" ".join(cur))
+    return parts
+
+@app.get("/read_chunked")
+async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+    title, author, text = extract_article(url)
+    narration = prepare_article(title, author, preprocess_for_tts(text))
+    parts = chunk_by_sentence(narration, target=1200, hard_max=1600)
+
+    async def multi():
+        for i, part in enumerate(parts):
+            try:
+                async for b in stream_bytes_for_text_safe(
+                    part, voice or VOICE_ID, model or MODEL_ID
+                ):
+                    if b:
+                        yield b
+            except Exception as e:
+                # Log, then stop or continue; do NOT raise after streaming started
+                print({"event": "chunk_fail", "i": i, "err": str(e)[:200]})
+                break  # or `continue` to try next part
+
+    return StreamingResponse(multi(), media_type="audio/mpeg")
+
+
+
+
+
 
 # --- metrics API (admin)
 @app.get("/admin/metrics.json")
@@ -275,6 +412,83 @@ def get_lock(h: str) -> asyncio.Lock:
 # --- TTS request
 class TTSRequest(BaseModel):
     text: str
+    
+from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+
+class TTSBody(BaseModel):
+    text: str
+
+@app.get("/tts")
+async def tts_get(text: str, voice: str | None = None, model: str | None = None):
+    clean = preprocess_for_tts(text)
+    data = await tts_bytes(clean, voice or VOICE_ID, model or MODEL_ID)
+    return Response(content=data, media_type="audio/mpeg")
+
+@app.post("/tts")
+async def tts_post(body: TTSBody, voice: str | None = None, model: str | None = None):
+    clean = preprocess_for_tts(body.text)
+    data = await tts_bytes(clean, voice or VOICE_ID, model or MODEL_ID)
+    return Response(content=data, media_type="audio/mpeg")
+
+def prepare_article(title: str, author: str, text: str) -> str:
+    parts = []
+    if title:  parts.append(f"{title}.")
+    if author: parts.append(f"By {author}.")
+    if text:   parts.append(text)
+    return " ".join(parts)
+
+@app.get("/debug/config")
+def debug_config():
+    from os import getenv
+    key = getenv("ELEVENLABS_API_KEY", "")
+    return {
+        "has_api_key": bool(key),
+        "api_key_head": (key[:4] + "…" if key else None),
+        "voice_id": VOICE_ID,
+        "model_id": MODEL_ID,
+    }
+
+
+@app.get("/read")
+async def read(url: str, voice: str | None = None, model: str | None = None):
+    # sanity: key/voice present
+    if not API_KEY:
+        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY is missing")
+    v = (voice or VOICE_ID or "").strip()
+    if not v:
+        raise HTTPException(status_code=400, detail="voice id is required (dataset.voice or VOICE_ID)")
+
+    # 1) Extract + prepare
+    title, author, text = extract_article(url)
+    cleaned = preprocess_for_tts(text or "")
+    narration = prepare_article(title, author, cleaned)
+    if not narration or len(narration.strip()) < 40:
+        raise HTTPException(status_code=422, detail="No narratable text extracted from page")
+
+    # 2) Safe sentence chunks (small enough to never 502)
+    parts = chunk_by_sentence(narration, target=900, hard_max=1200)
+    if not parts:
+        raise HTTPException(status_code=422, detail="No narratable chunks produced")
+
+    # 3) Fetch each part to BYTES and concat
+    m = model or MODEL_ID
+    bufs: list[bytes] = []
+    for i, part in enumerate(parts):
+        try:
+            audio = await tts_bytes(part, v, m)
+            bufs.append(audio)
+            print({"event":"read_part_ok","i":i,"bytes":len(audio)})
+        except Exception as e:
+            # stop cleanly; we'll still return what we have
+            print({"event":"read_part_fail","i":i,"err":str(e)[:300]})
+            break
+
+    merged = b"".join(bufs)
+    if not merged:
+        raise HTTPException(status_code=502, detail="Upstream produced no audio for any chunk")
+
+    return Response(content=merged, media_type="audio/mpeg")
 
 # --- extract
 def is_public_http_url(u:str)->bool:
@@ -300,100 +514,77 @@ def is_public_http_url(u:str)->bool:
         return True
     except: return False
 
-async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str = MODEL_ID, voice_settings: dict | None = None, tone: str = "neutral"):
-    """Stream audio; write to disk cache; return StreamingResponse."""
-    client: httpx.AsyncClient = app.state.http_client
-    h = tts_hash(text, voice_id, model_id)
-    print({"event":"hash_debug","hash":h,"text_head":text[:80]})
-    p = cache_path(h)
+async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str = MODEL_ID,
+                              voice_settings: dict | None = None, tone: str = "neutral"):
+    if STUB_TTS:
+        # Always serve a local file for demos
+        from fastapi.responses import FileResponse
+        # use the one already in your repo (root) or put one in /static
+        demo_file = Path("ok.mp3")
+        if not demo_file.exists():
+            demo_file = Path("static/ok.mp3")
+        return FileResponse(demo_file, media_type="audio/mpeg", headers={"X-Demo":"1"})
+        # memory/disk cache paths ... (keep your existing code)
 
-    # memory cache
-    if h in cache:
-        print({"event":"cache_hit_mem","hash":h})
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+    headers = {"xi-api-key": API_KEY, "Accept": "audio/mpeg", "Content-Type": "application/json"}
+    payload = {
+        "text": text,
+        "model_id": model_id,
+        "voice_settings": voice_settings or {
+            "stability": 0.35, "similarity_boost": 0.9, "style": 0.35, "use_speaker_boost": True,
+        },
+        "optimize_streaming_latency": 2,
+    }
+
+    start_time = time.time()
+    first_chunk_time = None
+    total_bytes = 0
+    buf = bytearray()
+    tmp_path = p.with_suffix(".part")
+
+    # Start the stream *here* so we can check status before returning SR
+    resp = await client.stream("POST", url, headers=headers, json=payload)
+
+    if resp.status_code != 200:
+        err = await resp.aread()
+        await resp.aclose()
+        # Surface as a real error (not empty 200)
+        # You can also: return PlainTextResponse(err, status_code=resp.status_code)
+        raise HTTPException(status_code=502, detail=(err.decode("utf-8", "ignore")[:300] or "TTS upstream error"))
+
+    async def gen():
+        nonlocal first_chunk_time, total_bytes
         try:
-            write_stream_row(int(time.time()*1000), "mem", 0, len(cache[h]), model_id, h)
-        except Exception:
-            pass
-        return Response(content=cache[h], media_type="audio/mpeg", headers={"x-cache-hit": "true"})
-    # disk cache
-    if p.exists():
-        size = p.stat().st_size
-        print({"event":"cache_hit_disk","hash":h,"bytes":size})
-        data = p.read_bytes()
-        cache.put(h, data)
-        try:
-            write_stream_row(int(time.time()*1000), "disk", 0, size, model_id, h)
-        except Exception:
-            pass
-        return Response(content=data, media_type="audio/mpeg", headers={"x-cache-hit": "true"})
-
-    lock = get_lock(h)
-    async with lock:
-        if h in cache:
-            return Response(content=cache[h], media_type="audio/mpeg", headers={"x-cache-hit": "true"})
-        if p.exists():
-            data = p.read_bytes()
-            cache.put(h, data)
-            return Response(content=data, media_type="audio/mpeg", headers={"x-cache-hit": "true"})
-
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
-        headers = {
-            "xi-api-key": API_KEY,
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "text": text,
-            "model_id": model_id,
-            "voice_settings": voice_settings or {
-                "stability": 0.35,
-                "similarity_boost": 0.9,
-                "style": 0.35,
-                "use_speaker_boost": True,
-            },
-            "optimize_streaming_latency": 2,
-        }
-
-        start_time = time.time()
-        first_chunk_time = None
-        total_bytes = 0
-        buf = bytearray()
-        tmp_path = p.with_suffix(".part")
-
-        async def gen():
-            nonlocal first_chunk_time, total_bytes
+            with tmp_path.open("wb") as f:
+                async for chunk in resp.aiter_bytes(chunk_size=4096):
+                    if not chunk:
+                        continue
+                    if first_chunk_time is None:
+                        first_chunk_time = time.time()
+                    total_bytes += len(chunk)
+                    buf.extend(chunk)
+                    f.write(chunk)
+                    yield chunk
+        finally:
             try:
-                with tmp_path.open("wb") as f:
-                    print({"event": "tts_api_call", "hash": h, "model": model_id})
-                    async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                        if resp.status_code != 200:
-                            err = await resp.aread()
-                            print({"event":"tts_error","status":resp.status_code,"detail":err[:200]})
-                            return
-                        async for chunk in resp.aiter_bytes(chunk_size=4096):
-                            if not chunk:
-                                continue
-                            if first_chunk_time is None:
-                                first_chunk_time = time.time()
-                            total_bytes += len(chunk)
-                            buf.extend(chunk)
-                            f.write(chunk)
-                            yield chunk
-            finally:
-                first_ms = int(((first_chunk_time or time.time()) - start_time) * 1000)
-                print({"event": "tts_stream", "first_audio_ms": first_ms, "total_bytes": total_bytes, "hash": h, "tone": tone})
+                await resp.aclose()
+            except Exception:
+                pass
+            first_ms = int(((first_chunk_time or time.time()) - start_time) * 1000)
+            print({"event": "tts_stream", "first_audio_ms": first_ms, "total_bytes": total_bytes, "hash": h, "tone": tone})
+            try:
+                write_stream_row(int(time.time()*1000), "api", first_ms, total_bytes, model_id, h)
+            except Exception:
+                pass
+            if total_bytes > 0:
                 try:
-                    write_stream_row(int(time.time()*1000), "api", first_ms, total_bytes, model_id, h)
-                except Exception:
-                    pass
-                if total_bytes > 0:
-                    try:
-                        tmp_path.replace(p)
-                        cache.put(h, bytes(buf))
-                    except Exception as e:
-                        print({"event":"cache_finalize_error","err":str(e)})
+                    tmp_path.replace(p)
+                    cache.put(h, bytes(buf))
+                except Exception as e:
+                    print({"event":"cache_finalize_error","err":str(e)})
 
-        return StreamingResponse(gen(), media_type="audio/mpeg", headers={"x-cache-hit": "false"})
+    return StreamingResponse(gen(), media_type="audio/mpeg", headers={"x-cache-hit": "false"})
 
 # --- Caching metrics and unified streamer
 MAX_CACHE_BYTES = int(os.getenv("CACHE_MAX_BYTES", str(2 * 1024**3)))
@@ -913,13 +1104,30 @@ async def read(url: str, voice: str | None = None, model: str | None = None):
 
 @app.get("/read_chunked")
 async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+    # 1) Extract & prepare
     title, author, text = extract_article(url)
-    narration = prepare_article(title, author, text)
-    chunks = chunk_by_sentence(narration, target=1200, hard_max=1600)
-    return StreamingResponse(
-        concat_stream(chunks, voice or VOICE_ID, model or MODEL_ID),
-        media_type="audio/mpeg"
-    )
+    cleaned = preprocess_for_tts(text or "")
+    narration = prepare_article(title, author, cleaned)
+
+    if not narration or len(narration.strip()) < 40:
+        # Bail early with a clear error instead of sending empty 200
+        raise HTTPException(status_code=422, detail="No narratable text extracted from page")
+
+    parts = chunk_by_sentence(narration, target=1200, hard_max=1600)
+
+    # 2) Prefetch-to-bytes for each chunk (safe and predictable)
+    async def multi():
+        for i, part in enumerate(parts):
+            try:
+                data = await tts_bytes(part, voice or VOICE_ID, model or MODEL_ID)
+                # yield the whole chunk as one piece (or slice into smaller pieces if you prefer)
+                yield data
+            except Exception as e:
+                # Log and stop cleanly. Do NOT raise after streaming started.
+                print({"event": "chunk_fail", "i": i, "err": str(e)[:300]})
+                break
+
+    return StreamingResponse(multi(), media_type="audio/mpeg")
 
 
 # _split_text_for_tts: reserved for future chunked synthesis

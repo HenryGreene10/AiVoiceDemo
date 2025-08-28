@@ -5,7 +5,7 @@
     // --- Config from <script data-*> ---
     const script   = document.currentScript;
     const ds       = (script && script.dataset) || {};
-    const apiBase  = ((ds.base || (location.origin || 'http://127.0.0.1:3000')) + '').replace(/\/+$/,'');
+    const apiBase  = ((ds.base || (location.origin || 'http://127.0.0.1:8000')) + '').replace(/\/+$/,'');
     const model    = (ds.model || 'eleven_turbo_v2') + '';
     const voiceId  = (ds.voice || '') + '';
     const stability = (ds.stability || '0.35') + '';
@@ -112,8 +112,21 @@
             <button class="close" id="closeBtn" aria-label="Close player" title="Close">✕</button>
           </div>
           <div class="status" id="status">Ready</div>
-          <audio id="audio" controls preload="none"></audio>
-          <div class="hint">Tip: hold <strong>Shift</strong> and click “Listen” for full article.</div>
+          <audio id="audio" preload="none"></audio>
+          <div class="tts-ctrls">
+            <button class="icon-btn" id="backBtn" aria-label="Back 15s" title="Back 15s">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 5v2.5A6.5 6.5 0 1 1 5.5 14h2a4.5 4.5 0 1 0 4.5-4.5V12l-5-4 5-4z"/></svg>
+            </button>
+            <button id="ppBtn" aria-label="Play/Pause">▶</button>
+            <button class="icon-btn" id="fwdBtn" aria-label="Forward 15s" title="Forward 15s">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 5v2.5A6.5 6.5 0 1 0 18.5 14h-2a4.5 4.5 0 1 1-4.5-4.5V12l5-4-5-4z"/></svg>
+            </button>
+            <select id="speedSel" class="speed" aria-label="Playback speed">
+              <option>0.5</option><option>0.75</option><option selected>1</option>
+              <option>1.25</option><option>1.5</option><option>2</option>
+            </select>
+          </div>
+          <div class="hint" id="hint">Tip: hold <strong>Shift</strong> and click “Listen” for full article.</div>
         </div>
   
         <div class="wrap">
@@ -126,6 +139,65 @@
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
       </div>
     `;
+
+    // Load external theme CSS from data-theme-url (Figma skin)
+    const themeUrl = (ds.themeUrl || ds.themeurl || '') + '';
+    if (themeUrl) {
+      fetch(themeUrl).then(r => r.text()).then(css => {
+        const ext = document.createElement('style'); ext.textContent = css;
+        shadow.appendChild(ext);
+      }).catch(()=>{});
+    }
+    
+    // ---- UI OVERRIDES (non-destructive) ----
+    const accent = (ds.accent || '#4f46e5') + '';
+    const size   = ((ds.size || 'md') + '').toLowerCase();
+    const radius = size === 'sm' ? 12 : size === 'lg' ? 18 : 14;
+    const padX   = size === 'sm' ? 12 : size === 'lg' ? 16 : 14;
+    const padY   = size === 'sm' ? 8  : size === 'lg' ? 12 : 10;
+
+    const styleOverride = document.createElement('style');
+    styleOverride.textContent = `
+      /* ----- Design tokens (can be driven by data-attrs) ----- */
+      .theme-light { --accent:${accent}; --accent-ink:#fff; --ring: 0 0 0 3px color-mix(in oklab, ${accent} 35%, transparent); }
+      .theme-dark  { --accent:${accent}; --accent-ink:#fff; --ring: 0 0 0 3px color-mix(in oklab, ${accent} 45%, transparent); }
+
+      /* Pill Button */
+      .btn {
+        padding:${padY}px ${padX}px;
+        border-radius:${radius}px;
+        background: linear-gradient(180deg, color-mix(in oklab, var(--btn) 86%, white 14%), var(--btn));
+        display:inline-flex; align-items:center; gap:8px;
+        letter-spacing:.2px;
+      }
+      .btn:focus-visible { outline:none; box-shadow: var(--ring); }
+      .btn svg { width:16px; height:16px; }
+
+      /* Player Card */
+      .player {
+        border-radius:${radius + 2}px;
+        backdrop-filter: saturate(1.2) blur(8px);
+        transition: opacity .22s ease, transform .22s ease, box-shadow .2s ease;
+      }
+      .player.open { box-shadow: 0 24px 60px rgba(0,0,0,.22); }
+      .title { font: 700 13px/1.3 system-ui; letter-spacing:.2px; }
+      .status{ font: 500 12px/1.3 system-ui; opacity:.85; }
+      .close { transition: background .15s ease; }
+      .close:focus-visible { outline:none; box-shadow: var(--ring); }
+
+      /* Accent variant: set --btn using --accent when theme is light/dark */
+      .theme-light .btn { --btn: var(--accent); color: var(--accent-ink); }
+      .theme-dark  .btn { --btn: var(--accent); color: var(--accent-ink); }
+    `;
+    shadow.appendChild(styleOverride);
+
+    // Add a small play icon to the button text (non-breaking)
+    const listenLabel = shadow.getElementById('listenBtn');
+    if (listenLabel && !listenLabel.querySelector('svg')) {
+      listenLabel.insertAdjacentHTML('afterbegin',
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>'
+      );
+    }
   
     // --- Elements ---
     const $ = (id) => shadow.getElementById(id);
@@ -137,6 +209,52 @@
     const titleEl  = $('title');
     const closeBtn = $('closeBtn');
     const toastEl  = $('toast');
+    
+    // Custom audio controls
+    const backBtn = $('backBtn');
+    const fwdBtn  = $('fwdBtn');
+    const speedSel= $('speedSel');
+    const ppBtn   = $('ppBtn');
+
+    // icons for the button
+    const playSvg  = '<svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
+    const pauseSvg = '<svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+
+    function updatePP(){ if (ppBtn) ppBtn.innerHTML = audioEl.paused ? playSvg : pauseSvg; }
+
+    // click handlers
+    backBtn?.addEventListener('click', ()=> {
+      audioEl.currentTime = Math.max(0, (audioEl.currentTime||0) - 15);
+    });
+    fwdBtn?.addEventListener('click', ()=> {
+      const d = audioEl.duration||0;
+      audioEl.currentTime = Math.min(d, (audioEl.currentTime||0) + 15);
+    });
+    speedSel?.addEventListener('change', ()=> {
+      const v = parseFloat(speedSel.value||'1') || 1;
+      audioEl.playbackRate = v;
+    });
+    ppBtn?.addEventListener('click', async ()=> {
+      try {
+        if (audioEl.paused) { await audioEl.play(); } else { audioEl.pause(); }
+      } catch { /* ignore */ }
+    });
+
+    // Optional nice icons for play/pause
+    // keep the icon in sync
+    audioEl.addEventListener('play', updatePP);
+    audioEl.addEventListener('pause', updatePP);
+    updatePP();
+    audioEl.addEventListener('play', updatePP);
+    audioEl.addEventListener('pause', updatePP);
+    updatePP();
+
+    // Hide hint unless preview mode is on
+    const previewEnabled = ((ds.preview || 'off') + '').toLowerCase() === 'on';
+    if (!previewEnabled) {
+      const hint = $('hint');
+      if (hint) hint.style.display = 'none';
+    }
   
     // --- Utilities ---
     const emit = (type, extra={}) => {
@@ -203,10 +321,10 @@
     }
   
     async function fullArticle() {
-      const u = new URL(`${apiBase}/read_chunked`);
+      const u = new URL(`${apiBase}/read`);
       u.searchParams.set('url', location.href);
-      if (voiceId) u.searchParams.set('voice', voiceId);
       u.searchParams.set('model', model);
+      if (voiceId) u.searchParams.set('voice', voiceId);
       return u.toString(); // audio stream
     }
   
@@ -273,8 +391,8 @@
       if (!player.classList.contains('open')) openPlayer();
   
       try {
+        // Product default: full article on click. Enable preview only with data-preview="on".
         const previewEnabled = ((ds.preview || 'off') + '').toLowerCase() === 'on';
-        // Product default: full article. If you want a dev preview, set data-preview="on".
         const src = (previewEnabled && !e.shiftKey) ? await previewClip() : await fullArticle();
         await ensureAudioAndPlay(src);
       } catch (err) {
@@ -286,12 +404,7 @@
       }
     });
   
-    // hide Shift hint unless preview is on
-    const previewEnabled = ((ds.preview || 'off') + '').toLowerCase() === 'on';
-    if (!previewEnabled) {
-      const hint = shadow.getElementById('/* your hint element id */') || shadow.querySelector('.hint');
-      if (hint) hint.style.display = 'none';
-    }
+    
 
     // --- Public API (optional) ---
     window.TTSWidget = {
