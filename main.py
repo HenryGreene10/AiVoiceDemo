@@ -416,20 +416,43 @@ class TTSRequest(BaseModel):
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 
+# --- Cached, streaming TTS for raw text ---
+from fastapi import Query
+
 class TTSBody(BaseModel):
     text: str
 
 @app.get("/tts")
-async def tts_get(text: str, voice: str | None = None, model: str | None = None):
-    clean = preprocess_for_tts(text)
-    data = await tts_bytes(clean, voice or VOICE_ID, model or MODEL_ID)
-    return Response(content=data, media_type="audio/mpeg")
+def tts_get(
+    text: str = Query(..., max_length=20000),
+    voice: str | None = Query(None),
+    model: str | None = Query(None),
+    stability: float = Query(0.35),
+    similarity: float = Query(0.9),
+    style: float = Query(0.35),
+    speaker_boost: bool = Query(True),
+    opt_latency: int = Query(2),
+):
+    v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
+    if not v:
+        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+    return stream_with_cache(text, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
 
 @app.post("/tts")
-async def tts_post(body: TTSBody, voice: str | None = None, model: str | None = None):
-    clean = preprocess_for_tts(body.text)
-    data = await tts_bytes(clean, voice or VOICE_ID, model or MODEL_ID)
-    return Response(content=data, media_type="audio/mpeg")
+def tts_post(
+    body: TTSBody,
+    voice: str | None = Query(None),
+    model: str | None = Query(None),
+    stability: float = Query(0.35),
+    similarity: float = Query(0.9),
+    style: float = Query(0.35),
+    speaker_boost: bool = Query(True),
+    opt_latency: int = Query(2),
+):
+    v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
+    if not v:
+        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+    return stream_with_cache(body.text, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
 
 def prepare_article(title: str, author: str, text: str) -> str:
     parts = []
