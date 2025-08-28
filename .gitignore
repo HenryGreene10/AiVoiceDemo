@@ -1,18 +1,33 @@
-# SAM / builds / virtualenvs / IDE / OS junk
-.aws-sam/
-.cache/
-cache/
-dist/
-build/
-venv/
+@'
+# Python
 .venv/
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*.pyo
+*.pyd
+
+# Local cache & audio artefacts
+cache/
+*.mp3
+*.wav
+*.part
+
+# Editor/OS
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 
-# Local env + secrets + outputs
+# AWS SAM / build
+.aws-sam/
+.sam/
+*.zip
+
+# Logs & metrics data
+metrics/streams.csv
+*.log
+
+# Secrets
 .env
 env.json
-*.mp3
+'@ | Set-Content -Encoding UTF8 .gitignore

@@ -15,11 +15,11 @@ from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 import re
 from fastapi.staticfiles import StaticFiles
-from metrics import write_stream_row
-try:
-    from src.prosody import prepare_article
-except Exception:
-    from prosody import prepare_article
+#from src.metrics import write_stream_row
+#try:
+#    from src.prosody import prepare_article
+#except Exception:
+#    from src.prosody import prepare_article
 
 # --- config / env
 load_dotenv(".env")
