@@ -16,6 +16,50 @@ import socket, ipaddress, asyncio, json
 import re
 from fastapi.staticfiles import StaticFiles
 import csv
+
+# --- tenant key authentication ---
+TENANT_KEYS = set(s.strip() for s in os.getenv("TENANT_KEYS","").split(",") if s.strip())
+
+async def require_tenant(request: Request):
+    if not TENANT_KEYS:
+        return  # open mode
+    key = request.headers.get("x-tenant-key")
+    if key not in TENANT_KEYS:
+        raise HTTPException(status_code=401, detail="Missing or invalid tenant key.")
+
+# --- rate limiting ---
+import time, collections
+
+RATE_LIMITS = {
+    "per_ip":   (60, 60),   # 60 requests / 60s
+    "per_tenant": (300, 60) # 300 requests / 60s
+}
+_ip_hits = collections.defaultdict(list)      # ip -> [timestamps]
+_tenant_hits = collections.defaultdict(list)  # tenant -> [timestamps]
+
+def _allow(counter: dict, key: str, limit: int, window_s: int) -> bool:
+    now = time.time()
+    arr = counter[key]
+    # drop old
+    while arr and now - arr[0] > window_s:
+        arr.pop(0)
+    if len(arr) >= limit:
+        return False
+    arr.append(now)
+    return True
+
+def _client_ip(request: Request) -> str:
+    xf = request.headers.get("x-forwarded-for")
+    return (xf.split(",")[0].strip() if xf else request.client.host) or "unknown"
+
+def rate_limit_check(request: Request):
+    ip = _client_ip(request)
+    ok_ip = _allow(_ip_hits, ip, *RATE_LIMITS["per_ip"])
+    # tenant key (or 'public' if open mode)
+    tenant = request.headers.get("x-tenant-key") or "public"
+    ok_tenant = _allow(_tenant_hits, tenant, *RATE_LIMITS["per_tenant"])
+    if not (ok_ip and ok_tenant):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry later.")
 #from src.metrics import write_stream_row
 #try:
 #    from src.prosody import prepare_article
@@ -42,8 +86,8 @@ from dotenv import load_dotenv; load_dotenv()
 API_KEY  = (os.getenv("ELEVENLABS_API_KEY","").strip())
 VOICE_ID = (os.getenv("VOICE_ID","").strip())
 MODEL_ID = (os.getenv("MODEL_ID","eleven_turbo_v2").strip())
-# cache dir as Path, ensure it exists
-CACHE_DIR = Path(os.getenv("CACHE_DIR", "./.cache"))
+from pathlib import Path
+CACHE_DIR = Path(os.getenv("CACHE_DIR","cache"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 1600  # ~90 seconds
@@ -170,15 +214,18 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
     return StreamingResponse(multi(), media_type="audio/mpeg")
 
 
-ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "").strip()
-ALLOWED_ORIGINS_SET = set([o.strip() for o in ALLOW_ORIGINS.split(",") if o.strip()])
+from fastapi.middleware.cors import CORSMiddleware
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS","").strip()
+ALLOWED = [o.strip() for o in ALLOW_ORIGINS.split(",") if o.strip()]
+if not ALLOWED:
+    ALLOWED = ["http://127.0.0.1:8000","http://localhost:8000"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # tighten later
-    allow_credentials=False,
-    allow_methods=["*"],            # important for preflight
+    allow_origins=ALLOWED,
+    allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=False,
 )
 
 @app.get("/health")
@@ -304,7 +351,7 @@ async def _shutdown():
 @app.options("/{path:path}")
 async def preflight(req: Request, path: str):
     headers = {
-        "Access-Control-Allow-Origin": req.headers.get("origin", "*") if ALLOWED_ORIGINS_SET else "*",
+        "Access-Control-Allow-Origin": req.headers.get("origin", "*") if ALLOWED else "*",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Private-Network": "true",
@@ -393,7 +440,7 @@ def guard_request(req: Request):
         return
     if not DEMO_MODE:
         origin = req.headers.get("origin")
-        if ALLOWED_ORIGINS_SET and origin not in ALLOWED_ORIGINS_SET:
+        if ALLOWED and origin not in ALLOWED:
             raise HTTPException(403, "Origin not allowed")
         if ALLOWED_KEYS:
             key = req.headers.get("x-listen-key")
@@ -440,7 +487,8 @@ class TTSBody(BaseModel):
     text: str
 
 @app.get("/tts")
-def tts_get(
+async def tts_get(
+    request: Request,
     text: str = Query(..., max_length=20000),
     voice: str | None = Query(None),
     model: str | None = Query(None),
@@ -450,6 +498,8 @@ def tts_get(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
+    await require_tenant(request)
+    rate_limit_check(request)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
@@ -473,6 +523,7 @@ def tts_post(
 
 @app.post("/api/tts")
 async def api_tts(
+    request: Request,
     body: TTSBody,
     voice: str | None = Query(None),
     model: str | None = Query(None),
@@ -482,6 +533,8 @@ async def api_tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(0),  # safer default
 ):
+    await require_tenant(request)
+    rate_limit_check(request)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")

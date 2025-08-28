@@ -7,3 +7,7 @@ python-dotenv>=1.0
 aiofiles>=23.2
 lxml>=5.2
 boto3>=1.35.100
+gunicorn>=21.2
+uvicorn[standard]>=0.30
+python-dotenv>=1.0
+fastapi>=0.111
