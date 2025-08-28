@@ -15,11 +15,26 @@ from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 import re
 from fastapi.staticfiles import StaticFiles
+import csv
 #from src.metrics import write_stream_row
 #try:
 #    from src.prosody import prepare_article
 #except Exception:
 #    from src.prosody import prepare_article
+
+
+
+# --- metrics setup ---
+METRICS_DIR = Path("metrics"); METRICS_DIR.mkdir(exist_ok=True)
+METRICS_FILE = METRICS_DIR / "streams.csv"
+
+def write_stream_row(ts_ms: int, cache: str, ttfb_ms: int, bytes_total: int, model: str, key_hash: str):
+    is_new = not METRICS_FILE.exists()
+    with METRICS_FILE.open("a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if is_new:
+            w.writerow(["ts_ms","cache","ttfb_ms","bytes","model","hash"])
+        w.writerow([ts_ms, cache, ttfb_ms, bytes_total, model, key_hash])
 
 # --- config / env
 load_dotenv(".env")
@@ -34,6 +49,7 @@ DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 1600  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
+OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
 
 
 # --- app
@@ -170,6 +186,7 @@ def health():
     return {"ok": True}
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/cache", StaticFiles(directory=str(CACHE_DIR)), name="cache")
 
 # --- simple preprocess to improve pauses & flow for TTS
 def preprocess_for_tts(text: str) -> str:
@@ -454,6 +471,39 @@ def tts_post(
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
     return stream_with_cache(body.text, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
 
+@app.post("/api/tts")
+async def api_tts(
+    body: TTSBody,
+    voice: str | None = Query(None),
+    model: str | None = Query(None),
+    stability: float = Query(0.35),
+    similarity: float = Query(0.9),
+    style: float = Query(0.35),
+    speaker_boost: bool = Query(True),
+    opt_latency: int = Query(0),  # safer default
+):
+    v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
+    if not v:
+        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+
+    # keep request small & clean to avoid upstream 5xx
+    clean = preprocess_for_tts(body.text)[:600]
+
+    key  = _cache_key(clean, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
+    path = os.path.join(CACHE_DIR, f"{key}.mp3")
+
+    # on miss, synthesize then write to cache
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        try:
+            data = await tts_bytes(clean, v, model or MODEL_ID)
+        except Exception as e:
+            # show the *real* upstream error in our response so it's debuggable
+            raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+        with open(path, "wb") as f:
+            f.write(data)
+
+    return {"audioUrl": f"/cache/{key}.mp3"}
+
 def prepare_article(title: str, author: str, text: str) -> str:
     parts = []
     if title:  parts.append(f"{title}.")
@@ -684,6 +734,7 @@ def stream_with_cache(text: str, voice: str, model: str,
     path = os.path.join(CACHE_DIR, f"{key}.mp3")
     if os.path.exists(path):
         metrics["tts_cache_hits"] += 1
+        write_stream_row(int(time.time()*1000), "HIT", 0, os.path.getsize(path), model, os.path.basename(path).split(".")[0])
         return FileResponse(path, media_type="audio/mpeg", headers={"X-Cache": "HIT"})
 
     metrics["tts_cache_misses"] += 1
@@ -754,6 +805,14 @@ def stream_with_cache(text: str, voice: str, model: str,
             os.replace(tmp, path)
             complete = True
             enforce_cache_budget()
+            write_stream_row(
+                int(time.time()*1000),
+                "MISS",
+                metrics["tts_first_byte_ms"][-1] if metrics["tts_first_byte_ms"] else 0,
+                os.path.getsize(path),
+                model,
+                key
+            )
         except Exception:
             try:
                 if not complete and os.path.exists(tmp):
@@ -782,6 +841,7 @@ def stream_with_cache(text: str, voice: str, model: str,
     path = os.path.join(CACHE_DIR, f"{key}.mp3")
     if os.path.exists(path):
         metrics["tts_cache_hits"] += 1
+        write_stream_row(int(time.time()*1000), "HIT", 0, os.path.getsize(path), model, os.path.basename(path).split(".")[0])
         return FileResponse(path, media_type="audio/mpeg", headers={"X-Cache": "HIT"})
 
     metrics["tts_cache_misses"] += 1
@@ -850,6 +910,14 @@ def stream_with_cache(text: str, voice: str, model: str,
             os.replace(tmp, path)
             complete = True
             enforce_cache_budget()
+            write_stream_row(
+                int(time.time()*1000),
+                "MISS",
+                metrics["tts_first_byte_ms"][-1] if metrics["tts_first_byte_ms"] else 0,
+                os.path.getsize(path),
+                model,
+                key
+            )
         except Exception:
             try:
                 if not complete and os.path.exists(tmp):
@@ -925,6 +993,10 @@ def tts(
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE not set).")
     return stream_with_cache(text, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+
+@app.get("/favicon.ico")
+def _favicon():
+    return Response(status_code=204)
 
 # --- extract
 @app.get("/extract")

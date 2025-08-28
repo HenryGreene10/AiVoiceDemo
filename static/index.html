@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <link rel="icon" href="data:,">
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Listen Demo</title>
@@ -13,19 +15,13 @@
     .player.show{display:block}
   </style>
 </head>
-<script
-  src="http://localhost:8000/static/tts-widget.v1.js?v=figma5"
-  data-base="http://localhost:8000"
-  data-voice="4RZ84U1b4WCqpu57LvIq"
-  data-theme="light"
-  data-theme-url="http://localhost:8000/static/themes/figma.css"
-  data-preview="off">
-</script>
+
 <body>
   <main>
     <h1>AI Listen Demo</h1>
-    <p id="demo-text">This is a short sample paragraph for the demo player. Click listen.</p>
-    <button class="listen-btn" id="listenBtn">▶ Listen</button>
+    <article id="demo-article">
+      <p>This is a short sample paragraph for the demo player. Click listen.</p>
+    </article>
   </main>
 
   <!-- Minimal player shell (style this to match Figma) -->
@@ -35,21 +31,15 @@
     <button id="closePlayer">Close</button>
   </div>
 
-  <!-- e.g., set data-base to https://abc.execute-api.us-east-1.amazonaws.com/Prod -->
-  <script
-    src="./tts-widget.v1.js"
-    data-base="http://localhost:3000"
-    data-model="eleven_turbo_v2"
-    data-voice="21m00Tcm4TlvDq8ikWAM"
-    data-theme="light"
-    data-position="br"
-  ></script>
-  <!-- static/index.html -->
-<script
-src="http://127.0.0.1:8000/static/tts-widget.v1.js"
-data-base="http://127.0.0.1:8000"
-data-voice="21m00Tcm4TlvDq8ikWAM"
-data-preview="off">
+<script src="/static/tts-widget.v1.js?v=12"
+        data-base="http://127.0.0.1:8000"
+        data-voice="21m00Tcm4TlvDq8ikWAM"></script>
+<script>
+  window.AiListen.init({
+    apiBase: "http://127.0.0.1:8000",
+    voiceId: "21m00Tcm4TlvDq8ikWAM",
+    selector: "article"
+  });
 </script>
 </body>
 </html>
