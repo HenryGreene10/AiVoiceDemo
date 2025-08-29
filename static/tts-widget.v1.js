@@ -339,15 +339,22 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
                         || '';
           const subtitle = authorEl ? `By ${authorEl.trim()}` : location.hostname;
 
-          // open bottom mini-player (non-modal)
-          if (window.AiMini) {
-            // make sure the mini bar uses the same audio element
-            const miniAudio = window.AiMini.audio();
-            if (miniAudio && miniAudio !== audioEl) {
-              miniAudio.src = audioEl.src;
-              try { await miniAudio.play(); } catch {}
-            }
-            window.AiMini.open({ title: titleEl, subtitle });
+                     // open bottom mini-player (non-modal)
+           if (window.AiMini) {
+             // Apply auto-theme if allowed
+             const scriptTag = document.querySelector('script[src*="tts-widget"]');
+             const autoThemeAllowed = (scriptTag?.dataset?.autotheme ?? 'true') !== 'false';
+             if (autoThemeAllowed && window.__AiListenAutoTheme) {
+               window.__AiListenAutoTheme();
+             }
+             
+             // make sure the mini bar uses the same audio element
+             const miniAudio = window.AiMini.audio();
+             if (miniAudio && miniAudio !== audioEl) {
+               miniAudio.src = audioEl.src;
+               try { await miniAudio.play(); } catch {}
+             }
+             window.AiMini.open({ title: titleEl, subtitle });
           } else {
             // fallback to basic popup
             ensurePlayerUI();

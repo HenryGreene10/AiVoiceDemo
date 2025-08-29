@@ -1,70 +1,303 @@
-/* Professional, docked bottom mini-player. Safe-area aware. */
+/* ---- Mini Player • Compact Card v3 (clean) ---- */
 :root{
-    --mp-font: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    --mp-bg: rgba(14, 19, 24, .92);         /* card background */
-    --mp-fg: #EAF2FF;                       /* text/icons */
-    --mp-accent: #4DA3FF;                   /* brand accent */
+    /* theme */
+    --mp-font: inherit;
+    --mp-bg: rgba(16, 20, 24, .92);
+    --mp-fg: #EAF2FF;
+    --mp-muted: #9FB4CC;
+    --mp-accent: #4DA3FF;
     --mp-border: rgba(255,255,255,.10);
     --mp-radius: 16px;
-    --mp-shadow: 0 -14px 40px rgba(0,0,0,.35);
-    --mp-height: 68px;
+    --mp-shadow: 0 20px 50px rgba(0,0,0,.40);
+  
+    /* layout spacing */
+    --mp-gap-top:      20px;  /* title → meter */
+    --mp-gap-bottom:    0px;  /* meter → controls */
+    --mp-controls-gap:  1px;  /* controls extra top margin */
+  
+    /* sizing */
+    --mp-width: 820px;
+  
+    /* buttons and icons */
+    --mp-btn-center: 56px;
+    --mp-btn-side:   42px;
+    --mp-icon-center: 30px;
+    --mp-icon-side:   56px;
+  
+    /* progress (you wanted hairline) */
+    --mp-track-h: 1px;
+    --mp-knob:    4px;
+    --mp-progress-bg: rgba(0,0,0,.18);
+    --mp-progress-fill: #000;
+  
+    /* micro-nudges for icon drawings (adjust if a glyph sits high/low) */
+    --mp-center-nudge-x: 0px;
+    --mp-center-nudge-y: 0px;
+    --mp-side-nudge-x:   -7.5px;
+    --mp-side-nudge-y:   0px;   /* positive = move DOWN */
   }
   
-  #ai-mini {
+  /* wrapper (pop-in) */
+  #ai-mini{
     position: fixed;
-    left: max(8px, env(safe-area-inset-left));
-    right: max(8px, env(safe-area-inset-right));
-    bottom: calc(8px + env(safe-area-inset-bottom));
-    height: var(--mp-height);
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 12px;
-    background: var(--mp-bg);
+    right: 18px;
+    left: auto;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    transform: translateY(120%) scale(.98);
+    opacity: 0;
+    transition: transform .18s ease, opacity .18s ease;
+    z-index: 999998;
+  }
+  #ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
+  #ai-mini.hidden{ pointer-events: none; }
+  
+  /* card */
+  .ai-card{
+    width: min(var(--mp-width), 96vw);
+    /* make card match host site background */
+    background: inherit !important;
+    /* if you prefer glass from your earlier look, replace with:
+       background: color-mix(in srgb, var(--mp-bg) 92%, transparent);
+       backdrop-filter: blur(10px) saturate(130%);
+    */
     color: var(--mp-fg);
     border: 1px solid var(--mp-border);
     border-radius: var(--mp-radius);
-    box-shadow: var(--mp-shadow);
-    backdrop-filter: blur(8px) saturate(120%);
-    z-index: 999998;
-    transform: translateY(120%); opacity: 0;
-    transition: transform .18s ease, opacity .18s ease;
-    font-family: var(--mp-font);
+    box-shadow:
+      0 24px 70px rgba(0,0,0,.48),
+      0 0 0 1px var(--mp-border),
+      0 12px 30px color-mix(in srgb, var(--mp-accent) 22%, transparent);
+         font-family: var(--mp-font);
+     padding: 12px 14px 8px;
+   }
+
+   
+  
+  /* title */
+  .ai-title{
+    font-weight: 650; font-size: 15px; line-height: 1.25;
+    margin-bottom: 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-align: center;
   }
   
-  /* enter/exit */
-  #ai-mini.show { transform: translateY(0); opacity: 1; }
-  #ai-mini.hidden { pointer-events: none; }
+  /* meter wrapper (progress + timebar) */
+  .ai-meter{ margin-top: var(--mp-gap-top); margin-bottom: var(--mp-gap-bottom); }
   
-  /* layout */
-  #ai-mini .mp-btn {
-    width: 38px; height: 38px; min-width: 38px;
-    border-radius: 10px; border: 1px solid var(--mp-border);
-    background: color-mix(in srgb, var(--mp-bg) 75%, #fff 25%);
-    color: var(--mp-fg); cursor: pointer;
+  /* progress */
+  .ai-progress{
+    display: flex; align-items: center; justify-content: center;
+    width: 100%;
   }
-  #ai-mini .mp-col { display:flex; flex:1; min-width: 0; gap: 8px; align-items:center; }
-  #ai-mini .mp-title { font-weight: 650; font-size: 14px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #ai-mini .mp-sub   { font-size: 12px; opacity:.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  
-  #ai-mini .mp-progress { display:flex; align-items:center; gap:8px; width: 50%; }
-  #ai-mini .mp-time { font-size: 12px; opacity:.8; min-width: 44px; text-align: center; }
-  #ai-mini .mp-range {
-    -webkit-appearance: none; appearance: none; width: 100%; height: 6px;
-    background: color-mix(in srgb, var(--mp-fg) 16%, transparent);
+  .ai-range{
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: var(--mp-track-h);
+    background: var(--mp-progress-bg);
     border-radius: 999px; outline: none;
+    margin: 0 8px;
   }
-  #ai-mini .mp-range::-webkit-slider-thumb{
-    -webkit-appearance:none; appearance:none; width:14px;height:14px;border-radius:50%;
-    background: var(--mp-accent); border: 1px solid color-mix(in srgb, var(--mp-fg) 30%, transparent);
-    margin-top:-4px; cursor: pointer;
+  .ai-range::-webkit-slider-thumb{
+    -webkit-appearance: none; appearance: none;
+    width: var(--mp-knob); height: var(--mp-knob);
+    border-radius: 50%;
+    background: var(--mp-progress-fill);
+    border: 0;
+    margin-top: calc((var(--mp-track-h) - var(--mp-knob)) / 2);
+    cursor: pointer;
+  }
+  /* Firefox track/thumb */
+  .ai-range::-moz-range-track{
+    height: var(--mp-track-h); background: var(--mp-progress-bg);
+    border-radius: 999px; border: none;
+  }
+  .ai-range::-moz-range-thumb{
+    width: var(--mp-knob); height: var(--mp-knob);
+    border-radius: 50%; background: var(--mp-progress-fill); border: none;
   }
   
-  #ai-mini .mp-rate {
-    border:1px solid var(--mp-border); border-radius: 10px; height: 32px;
-    background: color-mix(in srgb, var(--mp-bg) 75%, #fff 25%); color: var(--mp-fg);
+  /* time row */
+  .ai-timebar{
+    margin-top: 6px;
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--mp-muted);
   }
   
-  /* quick light theme helper (optional class) */
-  #ai-mini.light {
-    --mp-bg:#ffffff; --mp-fg:#101318; --mp-border:#e6e6e6; --mp-shadow:0 -14px 40px rgba(0,0,0,.18);
+  /* controls row */
+  .ai-controls{
+    margin-top: var(--mp-controls-gap);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    justify-items: center; align-items: center;
   }
   
+  /* button boxes */
+  .ai-btn{
+    position: relative;
+    display: block;
+    width: var(--mp-btn-center);
+    height: var(--mp-btn-center);
+    line-height: 0; overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--mp-border);
+    background: color-mix(in srgb, var(--mp-bg) 78%, #fff 22%);
+    color: var(--mp-fg); cursor: pointer;
+    transition: transform .08s ease, border-color .12s ease;
+  }
+  .ai-btn:hover{ border-color: color-mix(in srgb, var(--mp-accent) 60%, transparent); }
+  .ai-btn:active{ transform: translateY(1px) scale(.98); }
+  .ai-btn.side{ width: var(--mp-btn-side); height: var(--mp-btn-side); }
+  
+  /* -------- SINGLE centering method (do not duplicate) -------- */
+  /* Inline SVG/IMG: absolutely center + per-role nudges */
+  .ai-btn svg, .ai-btn img{
+    position: absolute;
+    inset: 0; margin: auto;            /* hard center */
+    width: var(--mp-icon-center);
+    height: var(--mp-icon-center);
+    transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
+  }
+  .ai-btn.side svg, .ai-btn.side img{
+    width: var(--mp-icon-side);
+    height: var(--mp-icon-side);
+    transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
+  }
+  
+  /* Custom icons via mask */
+  :root{
+    --mp-icon: 18px;              /* fallback/global */
+    --icon-play:  ; /* url('/static/icons/play.svg') */
+    --icon-pause: ; /* url('/static/icons/pause.svg') */
+    --icon-back:  ; /* url('/static/icons/back.svg')  */
+    --icon-fwd:  ; /* url('/static/icons/fwd.svg')   */
+  }
+  html.custom-icons .ai-btn svg{ display:none; }
+  html.custom-icons .ai-btn::before{
+    content:"";
+    position:absolute; inset:0; margin:auto;    /* hard center */
+    width: var(--mp-icon-center); height: var(--mp-icon-center);
+    background-color: currentColor;
+    -webkit-mask-repeat:no-repeat; -webkit-mask-position:center; -webkit-mask-size:contain;
+            mask-repeat:no-repeat;         mask-position:center;         mask-size:contain;
+    transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
+  }
+  html.custom-icons .ai-btn.side::before{
+    width: var(--mp-icon-side); height: var(--mp-icon-side);
+    transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
+  }
+  html.custom-icons .ai-btn[data-icon="play"]::before  { -webkit-mask-image: var(--icon-play);  mask-image: var(--icon-play);  }
+  html.custom-icons .ai-btn[data-icon="pause"]::before { -webkit-mask-image: var(--icon-pause); mask-image: var(--icon-pause); }
+  html.custom-icons .ai-btn[data-icon="back"]::before  { -webkit-mask-image: var(--icon-back);  mask-image: var(--icon-back);  }
+  html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(--icon-fwd);   mask-image: var(--icon-fwd);   }
+  /* -------- end single centering method -------- */
+  
+  /* footer / rate */
+  .ai-footer{ margin-top: 6px; display:flex; align-items:flex-end; justify-content:flex-start; }
+  .ai-rate{
+    -webkit-appearance: none; appearance: none;
+    background: transparent; border: 0; padding: 0;
+    font-size: 12px; line-height: 1; color: #000;
+  }
+  
+  /* mobile tweaks */
+  @media (max-width: 420px){
+    .ai-card{ padding: 12px 12px 8px; }
+    .ai-title{ font-size: 14px; }
+    .ai-btn{ width: 40px; height: 40px; }
+    .ai-btn.primary{ width: 50px; height: 50px; }
+  }
+
+
+  
+  
+  
+  
+  
+  /* Player bottom-right placement (if you haven’t switched yet) */
+  #ai-mini{
+    position: fixed;
+    right: 18px;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    transform: translateY(120%) scale(.98);
+    opacity: 0;
+    transition: transform .18s ease, opacity .18s ease;
+    z-index: 999998;
+  }
+  #ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
+  #ai-mini.hidden{ pointer-events: none; }
+  
+
+
+/* Close (×): just a grey glyph, no box/border */
+.ai-close{
+  position:absolute; top:6px; left:6px;
+  width:24px; height:24px;
+  display:grid; place-items:center;
+  background: transparent !important;   /* no box */
+  border: none !important;              /* no border */
+  box-shadow: none !important;
+  outline: none !important;
+  color:#6b7280;                         /* grey glyph */
+  cursor:pointer;
+}
+.ai-close:after{ content:"×"; font-size:16px; font-weight:700; line-height:1; }
+
+/* Overlay used for click-outside to close */
+#ai-overlay{
+  position:fixed; inset:0;
+  background: transparent;              /* invisible; change to rgba(0,0,0,.04) if you want a tint */
+  z-index: 999996;
+  pointer-events:none; opacity:0; transition: opacity .12s ease;
+}
+#ai-overlay.show{ pointer-events:auto; opacity:1; }
+
+
+
+/* Style the Listen pill from the start; match page/mini-player background */
+#ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  background: inherit !important;   /* use the page background immediately */
+  color: #000 !important;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 650;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  transition: transform .18s ease, opacity .18s ease;
+  z-index: 999997;
+}
+
+/* Pre-hide: instant fade on press, but keep pointer events so the click goes through */
+#ai-fab.prehide, .ai-fab.prehide, [data-ai-fab].prehide{
+  opacity: 0;
+  transform: translateY(20%);
+  /* NOTE: no pointer-events:none here — we *want* the click to fire */
+}
+
+/* Hidden state toggled by JS */
+#ai-fab.hide, .ai-fab.hide, [data-ai-fab].hide, button[aria-label="Listen"].hide{
+  opacity: 0;
+  transform: translateY(20%);
+  pointer-events: none;
+}
+
+/* Auto-hide while mini is open: CSS safety net using :has() */
+body:has(#ai-mini.show) #ai-fab,
+body:has(#ai-mini.show) .ai-fab,
+body:has(#ai-mini.show) [data-ai-fab],
+body:has(#ai-overlay.show) #ai-fab,
+body:has(#ai-overlay.show) .ai-fab,
+body:has(#ai-overlay.show) [data-ai-fab]{
+  display: none !important;
+}
+
+/* Auto-hide the Listen pill whenever the mini is visible (or overlay is up) */
+body:has(#ai-mini.show) #ai-fab,
+body:has(#ai-mini.show) .ai-fab,
+body:has(#ai-mini.show) [data-ai-fab],
+body:has(#ai-overlay.show) #ai-fab,
+body:has(#ai-overlay.show) .ai-fab,
+body:has(#ai-overlay.show) [data-ai-fab]{
+  display: none !important;
+}

@@ -10,6 +10,22 @@
   <!-- Our small theme for the popout -->
   <link rel="stylesheet" href="/static/mini-player.css">
 
+  <style>
+    :root{
+      --mp-icon: 20px; /* size you want */
+      --icon-play:  url('/static/icons/my-play.svg');
+      --icon-pause: url('/static/icons/my-pause.svg');
+      --icon-back:  url('/static/icons/my-back.svg');
+      --icon-fwd:   url('/static/icons/my-fwd.svg');
+    }
+  </style>
+  <script>
+    // enable custom icon mode
+    document.documentElement.classList.add('custom-icons');
+  </script>
+  <script> window.__AiListenAutoTheme?.(); </script>
+
+
   <link rel="stylesheet" href="/static/pro-player.css">
   <script defer src="/static/pro-player.js"></script>
   <!-- Paste your Figma CSS here or <link rel="stylesheet" href="/web/player.css"> -->
@@ -21,9 +37,24 @@
     .player.show{display:block}
   </style>
 </head>
-
+<body style="background-color:powderblue;"></body>
 <body>
+  
+
   <script defer src="/static/mini-player.js"></script>
+
+  <script>
+    // Optional: bump icon size globally
+    document.documentElement.style.setProperty('--mp-icon', '20px');
+
+    // Swap icons (SVG URLs or inline SVG strings)
+    window.AiMini?.useIcons({
+      play:  '/static/icons/my-play.svg',
+      pause: '/static/icons/my-pause.svg',
+      back:  '/static/icons/my-back.svg',
+      fwd:   '/static/icons/my-fwd.svg'
+    });
+  </script>
 
   <main>
     <h1>AI Listen Demo</h1>
@@ -53,5 +84,24 @@
         data-style="background:#0b5;color:#fff;border:1px solid #097;box-shadow:0 8px 24px rgba(0,0,0,.2);border-radius:9999px;padding:10px 14px;font:500 14px/1 system-ui,Segoe UI,Roboto,sans-serif;">
 </script>
 <script>window.AiListen.init();</script>
+
+<script>
+  (function tagFab(){
+    if (document.querySelector('#ai-fab, .ai-fab, [data-ai-fab]')) return;
+    let fab = document.querySelector('button[aria-label="Listen"]');
+    if (!fab) {
+      for (const btn of document.querySelectorAll('button')) {
+        if ((btn.textContent || '').trim().toLowerCase() === 'listen') { fab = btn; break; }
+      }
+    }
+    if (fab) {
+      fab.id = 'ai-fab';
+      fab.classList.add('ai-fab');
+      fab.setAttribute('data-ai-fab','');
+      return;
+    }
+    requestAnimationFrame(tagFab);
+  })();
+</script>
 </body>
 </html>

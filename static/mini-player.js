@@ -1,105 +1,422 @@
 (function(){
-    const $ = (s,r=document)=>r.querySelector(s);
-  
-    function fmt(t){
-      t = Math.max(0, Math.floor(t||0));
-      const m = Math.floor(t/60), s = t%60;
-      return `${m}:${s.toString().padStart(2,'0')}`;
+  const $ = (s,r=document)=>r.querySelector(s);
+
+  // --- FAB control ------------------------------------------------------------
+  let FAB = null;           // we remember the element we hid
+  let fabObserver = null;   // keeps it hidden if the widget tries to swap it
+
+  // Find the floating Listen pill in any of the ways the widget might inject it
+  function getFab(){
+    // common ids/classes + aria-labels that flip to "Pause"/"Play"
+    return document.querySelector(
+      '#ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"], button[aria-label="Play"], button[aria-label="Pause"]'
+    );
+  }
+
+  // Hide *hard* so the widget can't keep using it
+  function hideFab(hard = true){
+    const el = getFab();
+    if(!el) return;
+    FAB = el;
+    el.classList.add('hide');
+    el.setAttribute('aria-hidden','true');
+    el.style.pointerEvents = 'none';
+    el.style.opacity = '0';
+    if (hard) el.style.display = 'none';
+  }
+
+  // Restore when we close our mini-player
+  function showFab(){
+    const el = FAB || getFab();
+    if(!el) return;
+    el.classList.remove('hide');
+    el.removeAttribute('aria-hidden');
+    el.style.display = '';
+    el.style.pointerEvents = '';
+    el.style.opacity = '';
+  }
+
+  // When mini is open, keep hiding the pill if the widget re-renders it
+  function startFabObserver(){
+    if (fabObserver) return;
+    fabObserver = new MutationObserver(() => {
+      // if it reappears (or flips to Pause), hide again
+      const el = getFab();
+      if (el && (el.style.display !== 'none' || !el.classList.contains('hide'))){
+        hideFab(true);
+      }
+    });
+    fabObserver.observe(document.body, { childList:true, subtree:true });
+  }
+  function stopFabObserver(){
+    fabObserver?.disconnect();
+    fabObserver = null;
+  }
+
+  // Default icons (inline SVG)
+  const DEFAULT_ICONS = {
+    play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+    back:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 7v10l-6-5 6-5zm1 10V7l6 5-6 5z"/></svg>',
+    fwd:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 7v10l6-5-6-5zm-1 10V7l-6 5 6 5z"/></svg>',
+  };
+
+  // Live icon map (can be overridden)
+  const ICONS = {...DEFAULT_ICONS};
+
+  // Helper: render icon (inline <svg> string OR image URL)
+  function renderIcon(btn, icon){
+    if (!btn) return;
+    const s = String(icon||"");
+    if (s.trim().startsWith("<svg")) {
+      btn.innerHTML = s;
+    } else if (s) {
+      btn.innerHTML = `<img src="${s}" alt="" />`;
+    } else {
+      btn.innerHTML = "";
     }
-  
-    function ensureMini(){
-      let bar = $('#ai-mini');
-      if (bar) return bar;
-  
-      bar = document.createElement('div');
-      bar.id = 'ai-mini';
-      bar.innerHTML = `
-        <button class="mp-btn" id="mp-back" title="Back 10s">«</button>
-        <button class="mp-btn" id="mp-play" title="Play/Pause">►</button>
-        <button class="mp-btn" id="mp-fwd"  title="Fwd 10s">»</button>
-  
-        <div class="mp-col">
-          <div class="mp-title" id="mp-title">AI Listen</div>
-          <div class="mp-sub" id="mp-sub"></div>
+  }
+
+  // ---- Auto-theme (unchanged; keep your version if you already have it) ----
+  window.__AiListenAutoTheme ??= (function(){
+    function parse(str){ const c=document.createElement("canvas").getContext("2d"); c.fillStyle=str||"#000"; const rgb=c.fillStyle.replace(/[^\d,]/g,"").split(",").map(n=>+n.trim()); return {r:rgb[0]||0,g:rgb[1]||0,b:rgb[2]||0};}
+    const lum = c=>{ const L=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)}; return .2126*L(c.r)+.7152*L(c.g)+.0722*L(c.b); };
+    const dark = bg => { try { return lum(parse(bg)) < .5; } catch { return true; } };
+    return function apply(){
+      const root=document.documentElement, bcs=getComputedStyle(document.body);
+      let bg=bcs.backgroundColor||'#fff'; if(bg==='transparent') bg='#fff';
+      root.style.setProperty('--mp-font', bcs.fontFamily || 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif');
+      root.style.setProperty('--mp-bg', bg);
+      root.style.setProperty('--mp-fg', bcs.color || (dark(bg)?'#eaf2ff':'#111'));
+      root.style.setProperty('--mp-muted', dark(bg)?'rgba(255,255,255,.68)':'#506070');
+      root.style.setProperty('--mp-border', dark(bg)?'rgba(255,255,255,.12)':'rgba(0,0,0,.12)');
+      const a=document.querySelector('a'); if(a) root.style.setProperty('--mp-accent', getComputedStyle(a).color);
+    };
+  })();
+
+  // Create overlay once on widget bootstrap
+  if(!document.getElementById('ai-overlay')){
+    document.body.insertAdjacentHTML('beforeend', '<div id="ai-overlay"></div>');
+  }
+
+  // VISUAL pre-hide on press, but keep pointer-events so the click still fires.
+  document.addEventListener('pointerdown', (e) => {
+    const el = getFab?.();
+    if (!el) return;
+    if (e.target === el || el.contains(e.target)) {
+      el.classList.add('prehide');           // just fade it; do NOT disable pointer-events
+    }
+  }, true);
+
+  // After the click is dispatched, fully hide the FAB so it won't flash back.
+  document.addEventListener('click', (e) => {
+    const el = getFab?.();
+    if (!el) return;
+    if (el.classList.contains('prehide')) {
+      el.classList.remove('prehide');
+      hideFab?.(true);                        // now do the real hide (pointer-events: none)
+    }
+  }, true);
+
+
+
+  // Give the Listen pill stable selectors and the right color on first paint
+  (function tagFabOnce(){
+    function tag(el){
+      if (!el) return;
+      // stable selectors so CSS/JS work
+      el.id ||= 'ai-fab';
+      el.classList.add('ai-fab');
+      el.setAttribute('data-ai-fab','');
+
+      // ensure right color before first click (avoid initial black)
+      const bodyBg = getComputedStyle(document.body).backgroundColor || 'inherit';
+      el.style.background = bodyBg;   // matches page / mini-player
+      el.style.color = '#000';
+    }
+
+    // try existing
+    let el = getFab(); if (el) { tag(el); return; }
+
+    // watch DOM until widget injects it
+    const mo = new MutationObserver(() => {
+      const el = getFab();
+      if (el){ tag(el); mo.disconnect(); }
+    });
+    mo.observe(document.body, { childList:true, subtree:true });
+
+    // set theme vars at startup so CSS using --mp-* has values immediately
+    document.addEventListener('DOMContentLoaded', () => {
+      window.__AiListenAutoTheme?.();
+    });
+  })();
+
+  // Build the mini-player DOM
+  function ensureMini(){
+    let wrap = $('#ai-mini');
+    if (wrap) return wrap;
+
+    wrap = document.createElement('div');
+    wrap.id = 'ai-mini';
+
+    const card = document.createElement('div');
+    card.className = 'ai-card';
+    card.innerHTML = `
+      <button class="ai-close" id="mp-close" aria-label="Close player"></button>
+
+      <div class="ai-title" id="mp-title">AI Listen</div>
+      <div class="ai-meter">
+        <div class="ai-progress">
+          <input type="range" min="0" max="100" value="0" class="ai-range" id="mp-seek" aria-label="Seek">
         </div>
-  
-        <div class="mp-progress">
-          <div class="mp-time" id="mp-elapsed">0:00</div>
-          <input type="range" min="0" max="100" value="0" class="mp-range" id="mp-seek">
-          <div class="mp-time" id="mp-remaining">0:00</div>
+        <div class="ai-timebar">
+          <div id="mp-elapsed">0:00</div>
+          <div id="mp-total">--:--</div>
         </div>
-  
-        <select class="mp-rate" id="mp-rate" title="Playback speed">
+      </div>
+
+      <div class="ai-controls">
+        <button class="ai-btn side"    id="mp-back" aria-label="Back 10 seconds"></button>
+        <button class="ai-btn primary" id="mp-play" aria-label="Play"></button>
+        <button class="ai-btn side"    id="mp-fwd"  aria-label="Forward 10 seconds"></button>
+      </div>
+
+      <div class="ai-footer">
+        <select class="ai-rate" id="mp-rate" title="Playback speed" aria-label="Playback speed">
           <option>0.8x</option><option selected>1.0x</option>
           <option>1.2x</option><option>1.5x</option><option>2.0x</option>
         </select>
-  
-        <button class="mp-btn" id="mp-close" title="Close">✕</button>
-      `;
-      document.body.appendChild(bar);
-      return bar;
-    }
-  
-    function bindMiniControls(audio, meta){
-      const bar = ensureMini();
-      const q = id => bar.querySelector(id);
-  
-      // meta
-      q('#mp-title').textContent = meta?.title || 'AI Listen';
-      q('#mp-sub').textContent   = meta?.subtitle || '';
-  
-      const play = q('#mp-play'), back = q('#mp-back'), fwd = q('#mp-fwd');
-      const rate = q('#mp-rate'), seek = q('#mp-seek');
-      const el   = q('#mp-elapsed'), rem = q('#mp-remaining');
-      const close= q('#mp-close');
-  
-      const sync = ()=>{
-        try{
-          const d = audio.duration || 0, c = audio.currentTime || 0;
-          el.textContent = fmt(c);
-          rem.textContent = d ? `-${fmt(Math.max(0, d - c))}` : '0:00';
-          if (d) seek.value = Math.round((c/d)*100);
-        }catch{}
-      };
-  
-      // controls
-      play.onclick = ()=> audio.paused ? audio.play().catch(()=>{}) : audio.pause();
-      back.onclick = ()=> { try{ audio.currentTime = Math.max(0, audio.currentTime - 10); }catch{} };
-      fwd.onclick  = ()=> { try{ audio.currentTime = Math.min((audio.duration||1e9), audio.currentTime + 10); }catch{} };
-      rate.onchange= ()=> { audio.playbackRate = parseFloat(rate.value)||1; };
-  
-      seek.oninput = ()=>{
-        try{
-          const d = audio.duration||0;
-          audio.currentTime = d * (parseInt(seek.value||'0',10)/100);
-        }catch{}
-      };
-  
-      audio.addEventListener('timeupdate', sync);
-      audio.addEventListener('durationchange', sync);
-      audio.addEventListener('play', ()=>{ play.textContent='❚❚'; bar.classList.add('show'); bar.classList.remove('hidden'); });
-      audio.addEventListener('pause',()=>{ play.textContent='►'; });
-      audio.addEventListener('ended',()=>{ play.textContent='►'; });
-  
-      close.onclick = ()=> { bar.classList.remove('show'); bar.classList.add('hidden'); };
-  
-      // show immediately for feedback
-      bar.classList.add('show');
-    }
-  
-    // public API
-    window.AiMini = {
-      open(meta){
-        // reuse (or create) the shared audio element your widget already manages
-        let audio = document.getElementById('ai-listen-audio');
-        if (!audio){
-          audio = document.createElement('audio');
-          audio.id = 'ai-listen-audio';
-          document.body.appendChild(audio);
-        }
-        bindMiniControls(audio, meta||{});
-      },
-      audio(){ return document.getElementById('ai-listen-audio'); }
+      </div>
+    `;
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+    return wrap;
+  }
+
+  const fmt = t => { t=Math.max(0,Math.floor(t||0)); const m=Math.floor(t/60), s=t%60; return `${m}:${String(s).padStart(2,'0')}`; };
+
+  // put near your other helpers
+  function setPlayVisual(play, isPlaying){
+    play.setAttribute('data-icon', isPlaying ? 'pause' : 'play');
+    // update inline SVG if you're using defaults
+    play.innerHTML = isPlaying
+      ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  }
+
+  function bindMini(audio, meta){
+    const wrap = ensureMini();
+    const q = id => wrap.querySelector(id);
+
+    // meta
+    q('#mp-title').textContent = meta?.title || 'AI Listen';
+
+    const play = q('#mp-play'), back = q('#mp-back'), fwd = q('#mp-fwd');
+    back.classList.add('side'); fwd.classList.add('side');
+
+    back.setAttribute('data-icon','back');
+    fwd.setAttribute('data-icon','fwd');
+    play.setAttribute('data-icon','play');
+
+    const rate  = q('#mp-rate');
+    const seek  = q('#mp-seek');
+    const el    = q('#mp-elapsed');
+    const total = q('#mp-total');
+
+    const fmt = t => {
+      t = Math.max(0, Math.floor(t||0));
+      const m = Math.floor(t/60), s = t%60;
+      return `${m}:${String(s).padStart(2,'0')}`;
     };
+
+    function setPlayVisual(isPlaying){
+      play.setAttribute('data-icon', isPlaying ? 'pause' : 'play');
+      // swap inline svg if you're not using custom masks
+      play.innerHTML = isPlaying
+        ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    }
+
+    function setProgress(){
+      const d = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 0;
+      const c = Math.max(0, audio.currentTime || 0);
+      const pct = d ? Math.min(100, Math.max(0, (c/d)*100)) : 0;
+
+      seek.value = String(Math.round(pct));
+      seek.style.background =
+        `linear-gradient(90deg, var(--mp-progress-fill) ${pct}%,
+                               var(--mp-progress-bg) ${pct}%)`;
+      el.textContent = fmt(c);
+    }
+
+    function tryUpdateTotal(){
+      const d = audio.duration;
+      if (isFinite(d) && d > 0){
+        total.textContent = fmt(d);
+        clearInterval(totalTimer);
+      }
+    }
+
+    /* wire controls */
+    play.onclick = ()=> audio.paused ? audio.play().catch(()=>{}) : audio.pause();
+    back.onclick = ()=> { audio.currentTime = Math.max(0, (audio.currentTime||0) - 10); setProgress(); };
+    fwd.onclick  = ()=> { const d = audio.duration||1e9; audio.currentTime = Math.min(d, (audio.currentTime||0) + 10); setProgress(); };
+    rate.onchange= ()=> { audio.playbackRate = parseFloat(rate.value)||1; };
+    seek.oninput = ()=> {
+      const d = audio.duration||0;
+      if (d) audio.currentTime = d * (parseInt(seek.value||'0',10)/100);
+      setProgress();
+    };
+
+    // ensure the browser loads timing info
+    audio.preload = 'metadata';
+
+    // fire a few different hooks + a short polling fallback
+    ['loadedmetadata','loadeddata','canplay','canplaythrough','durationchange']
+      .forEach(ev => audio.addEventListener(ev, tryUpdateTotal));
+
+    const totalTimer = setInterval(tryUpdateTotal, 500);
+
+    // keep updating current time
+    audio.addEventListener('timeupdate', setProgress);
+
+    audio.addEventListener('play',  ()=> setPlayVisual(true));
+    audio.addEventListener('pause', ()=> setPlayVisual(false));
+    audio.addEventListener('ended', ()=> setPlayVisual(false));
+
+    // initial state
+    total.textContent = '--:--';
+    el.textContent    = '0:00';
+    setPlayVisual(!audio.paused);
+    setProgress();
+    wrap.classList.add('show');
+
+    // Hide pill on open, show on close
+    hideFab(true);           // make the Listen pill go away immediately
+    startFabObserver();      // keep it hidden if the widget flips it to "Pause"
+    document.getElementById('ai-overlay')?.classList.add('show');
+
+    // Wire up close functionality
+    const overlay = document.getElementById('ai-overlay');
+    const closeBtn = q('#mp-close');
+
+    function closePlayer(){
+      try{ audio.pause(); }catch{}
+      wrap.classList.remove('show');
+      document.getElementById('ai-overlay')?.classList.remove('show');
+      stopFabObserver();       // stop watching
+      showFab();               // bring the Listen pill back
+    }
+
+    // × button
+    closeBtn.addEventListener('click', closePlayer);
+
+    // click outside
+    overlay?.addEventListener('click', closePlayer);
+
+    // Esc key
+    document.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape' && wrap.classList.contains('show')) closePlayer();
+    });
+  }
+
+  // Public API
+  window.AiMini = {
+    open(meta){
+      // auto-theme unless disabled on the widget script tag
+      const tag = document.querySelector('script[src*="tts-widget"]');
+      const allow = (tag?.dataset?.autotheme ?? 'true') !== 'false';
+      if (allow) window.__AiListenAutoTheme?.();
+
+      let audio = document.getElementById('ai-listen-audio');
+      if (!audio){
+        audio = document.createElement('audio');
+        audio.id = 'ai-listen-audio';
+        document.body.appendChild(audio);
+      }
+      bindMini(audio, meta||{});
+    },
+    audio(){ return document.getElementById('ai-listen-audio'); },
+    /** Override icons at runtime. Accepts inline <svg> strings OR image URLs. */
+    useIcons(map){
+      for (const k of ['play','pause','back','fwd']){
+        if (map?.[k]) ICONS[k] = map[k];
+      }
+      // Refresh current buttons if mounted:
+      const wrap = $('#ai-mini'); if (!wrap) return;
+      renderIcon(wrap.querySelector('#mp-back'),  ICONS.back);
+      renderIcon(wrap.querySelector('#mp-fwd'),   ICONS.fwd);
+      // center button depends on state; just set to current:
+      const play = wrap.querySelector('#mp-play');
+      if (play){
+        const audio = document.getElementById('ai-listen-audio');
+        const icon = audio && !audio.paused ? ICONS.pause : ICONS.play;
+        renderIcon(play, icon);
+      }
+    }
+  };
+
+  /* ---------- FAB helpers ---------- */
+  function getFab(){
+    return document.querySelector('#ai-fab, .ai-fab, [data-ai-fab]');
+  }
+  function hideFab(on = true){
+    const el = getFab(); if (!el) return;
+    el.classList.toggle('hide', !!on);
+    el.classList.remove('prehide');  // clear any prehide residue
+  }
+
+  /* Prehide on press (visual only) so there's no flash, but still let click fire. */
+  document.addEventListener('pointerdown', (e) => {
+    const el = getFab(); if (!el) return;
+    if (e.target === el || el.contains(e.target)) {
+      el.classList.add('prehide');     // fade immediately
+      // DO NOT disable pointer-events here – we want the click to go through
+    }
+  }, true);
+
+  /* After click dispatches, do the real hide so the pill doesn't come back. */
+  document.addEventListener('click', (e) => {
+    const el = getFab(); if (!el) return;
+    if (el.classList.contains('prehide')) {
+      el.classList.remove('prehide');
+      hideFab(true);                   // full hide (opacity + pointer-events)
+    }
+  }, true);
+
+  /* Always wire the FAB to open the mini if it isn't open already. */
+  function wireFabOpen(){
+    const el = getFab();
+    if (!el || el.dataset.aiWired) return;
+    el.dataset.aiWired = '1';
+
+    el.addEventListener('click', (ev) => {
+      // If mini is visible, let the close/X handle it later
+      const mini = document.getElementById('ai-mini');
+      if (mini && mini.classList.contains('show')) return;
+
+      // Call our mini explicitly (safe to call even if your widget also calls it)
+      AiMini.open({
+        title: document.querySelector('h1, [data-title]')?.textContent || document.title
+      });
+    });
+  }
+
+  /* Watch DOM additions in case the widget re-renders the FAB */
+  wireFabOpen();
+  new MutationObserver(wireFabOpen).observe(document.body, { childList:true, subtree:true });
+
+  /* When the mini closes, make sure FAB is back and fully reset */
+  (function(){
+    const overlay = document.getElementById('ai-overlay');
+    function onClosed(){
+      hideFab(false);                  // show FAB again
+    }
+    // If your code already calls hideFab(false) in closePlayer, that's fine;
+    // this is just a safety net if close happens by overlay/Esc etc.
+    overlay?.addEventListener('transitionend', (e)=>{
+      if (!overlay.classList.contains('show')) onClosed();
+    });
   })();
+})();
   
