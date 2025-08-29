@@ -1,0 +1,64 @@
+/* Base theme tokens (override per customer if needed) */
+:root {
+    --ai-font: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    --ai-bg: #ffffff;
+    --ai-fg: #111111;
+    --ai-accent: #0b5;      /* fallback accent if auto-detect fails */
+    --ai-surface: #f8f8f8;
+    --ai-border: #e6e6e6;
+    --ai-shadow: 0 18px 50px rgba(0,0,0,.25);
+    --ai-radius: 14px;
+  }
+  
+  /* Fullscreen overlay */
+  #ai-listen-popup {
+    position: fixed; inset: 0; z-index: 999999;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,.45);
+  }
+  
+  /* Card */
+  .ai-card {
+    width: min(640px, 92%);
+    background: var(--ai-bg);
+    color: var(--ai-fg);
+    border: 1px solid var(--ai-border);
+    border-radius: var(--ai-radius);
+    box-shadow: var(--ai-shadow);
+    padding: 14px 14px 10px;
+    font-family: var(--ai-font);
+  }
+  
+  /* Header */
+  .ai-head {
+    display:flex; align-items:center; gap:10px; margin-bottom:8px;
+  }
+  .ai-dot {
+    width:10px; height:10px; border-radius:50%; background: var(--ai-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ai-accent) 25%, transparent);
+  }
+  .ai-title { font-weight: 650; font-size: 15px; line-height: 1.3; }
+  .ai-sub   { color:#555; font-weight: 500; font-size: 12px; }
+  
+  /* Player container */
+  .ai-player-wrap { margin-top: 8px; }
+  
+  /* Close button */
+  .ai-close {
+    position:absolute; top:10px; right:10px;
+    background: var(--ai-surface); border:1px solid var(--ai-border);
+    border-radius: 10px; padding:6px 10px; cursor:pointer;
+  }
+  
+  /* Media Chrome variables (color theming) */
+  media-controller {
+    --media-primary-color: var(--ai-accent);
+    --media-text-color: var(--ai-fg);
+    --media-background-color: var(--ai-bg);
+    --media-control-background: var(--ai-surface);
+    --media-control-border: var(--ai-border);
+    --media-control-border-radius: 10px;
+    --media-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ai-accent) 40%, transparent);
+  }
+  

@@ -3,19 +3,22 @@ import os, hashlib, requests, time, httpx
 from pathlib import Path
 from collections import OrderedDict
 from dotenv import load_dotenv; 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi import Query
+from fastapi import Query, Body
 import trafilatura, re, requests as http, json
 from trafilatura.metadata import extract_metadata
-from typing import Tuple
+from typing import Tuple, Optional
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 import re
 from fastapi.staticfiles import StaticFiles
 import csv
+from threading import Lock
+from datetime import datetime, timezone
 
 # --- tenant key authentication ---
 TENANT_KEYS = set(s.strip() for s in os.getenv("TENANT_KEYS","").split(",") if s.strip())
@@ -419,15 +422,132 @@ async def metrics_json(n: int = Query(200, ge=1, le=5000), token: str = Query(""
     except Exception as e:
         raise HTTPException(500, f"metrics read error: {e}")
 
-# --- metric (very simple)
+# --- analytics CSV tracking ---
+ANALYTICS_CSV = (CACHE_DIR / "analytics.csv").resolve()
+_analytics_lock = Lock()
+
+class MetricReq(BaseModel):
+    event: str            # "click"|"start"|"stop"|"progress"|"ended"
+    seconds: float = 0.0  # for ended / stop
+    url: Optional[str] = None
+    voice: Optional[str] = None
+    tenant: Optional[str] = None
+    user_agent: Optional[str] = None
+
 @app.post("/metric")
-async def metric(req: Request):
-    try:
-        data = await req.json()
-    except Exception:
-        data = {"raw": (await req.body()).decode(errors="ignore")[:500]}
-    print({"event":"metric", **data})
+def metric(req: MetricReq, request: Request, x_tenant_key: Optional[str] = Header(default=None)):
+    row = [
+        int(time.time()),
+        req.event,
+        round(float(req.seconds or 0), 2),
+        req.url or str(request.headers.get("referer", "")),
+        req.voice or os.getenv("VOICE_ID",""),
+        (req.tenant or x_tenant_key or ""),
+        request.client.host,
+        request.headers.get("user-agent","")
+    ]
+    with _analytics_lock:
+        new_file = not ANALYTICS_CSV.exists()
+        with ANALYTICS_CSV.open("a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if new_file:
+                w.writerow(["ts","event","seconds","url","voice","tenant","ip","ua"])
+            w.writerow(row)
     return {"ok": True}
+
+@app.get("/admin/analytics.csv")
+def analytics_csv():
+    if ANALYTICS_CSV.exists():
+        return FileResponse(str(ANALYTICS_CSV), media_type="text/csv", filename="analytics.csv")
+    raise HTTPException(404, "no analytics yet")
+
+# (Optional) filter by tenant or since timestamp
+@app.get("/admin/analytics.json")
+def analytics_summary(tenant: Optional[str] = None, since_ts: Optional[int] = None):
+    out = {
+        "total_impressions": 0,
+        "total_clicks": 0,
+        "total_seconds": 0.0,
+        "by_url": {},
+        "by_tenant": {}
+    }
+    if not ANALYTICS_CSV.exists():
+        return out
+
+    with ANALYTICS_CSV.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            try: ts = int(r.get("ts") or 0)
+            except: ts = 0
+            if since_ts and ts < since_ts:
+                continue
+            if tenant and (r.get("tenant") or "") != tenant:
+                continue
+
+            ev = (r.get("event") or "").lower()
+            secs = float(r.get("seconds") or 0)
+            url  = r.get("url") or ""
+            tnt  = r.get("tenant") or ""
+
+            if ev == "impression": out["total_impressions"] += 1
+            if ev == "click":       out["total_clicks"] += 1
+            if ev in ("ended","stop"): out["total_seconds"] += secs
+
+            if url:
+                b = out["by_url"].setdefault(url, {"impressions":0,"clicks":0,"seconds":0.0})
+                if ev == "impression": b["impressions"] += 1
+                if ev == "click":       b["clicks"] += 1
+                if ev in ("ended","stop"): b["seconds"] += secs
+
+            if tnt:
+                t = out["by_tenant"].setdefault(tnt, {"impressions":0,"clicks":0,"seconds":0.0})
+                if ev == "impression": t["impressions"] += 1
+                if ev == "click":       t["clicks"] += 1
+                if ev in ("ended","stop"): t["seconds"] += secs
+
+    out["total_seconds"] = round(out["total_seconds"], 2)
+    # compute CTRs
+    for d in (out["by_url"].values(), out["by_tenant"].values()):
+        for v in d:
+            pass
+    return out
+
+@app.get("/admin/analytics_timeseries.json")
+def analytics_timeseries(days: int = 30, tenant: Optional[str] = None):
+    """Return last N days of clicks & seconds (UTC date buckets)."""
+    if not ANALYTICS_CSV.exists():
+        return {"days": [], "clicks": [], "seconds": []}
+
+    # build buckets
+    today = datetime.now(timezone.utc).date()
+    order = [str(today.fromordinal(today.toordinal()-i)) for i in range(days)][::-1]
+    clicks = {d:0 for d in order}
+    seconds = {d:0.0 for d in order}
+
+    with ANALYTICS_CSV.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            if tenant and (r.get("tenant") or "") != tenant:
+                continue
+            try:
+                ts = int(r.get("ts") or 0)
+                d = datetime.fromtimestamp(ts, timezone.utc).date()
+                key = str(d)
+            except:
+                continue
+            if key not in clicks:  # out of range
+                continue
+
+            ev = (r.get("event") or "").lower()
+            secs = float(r.get("seconds") or 0)
+            if ev == "click": clicks[key] += 1
+            if ev in ("ended","stop"): seconds[key] += secs
+
+    return {
+        "days": order,
+        "clicks": [clicks[d] for d in order],
+        "seconds": [round(seconds[d],2) for d in order],
+    }
 
 # --- simple API key guard (prod only)
 ALLOWED_KEYS = set([k.strip() for k in os.getenv("ALLOWED_KEYS", "").split(",") if k.strip()])
@@ -883,6 +1003,54 @@ def _cache_key(text: str, voice: str, model: str,
     h.update(text.encode("utf-8"))
     h.update(f"|{voice}|{model}|{stability}|{similarity}|{style}|{speaker_boost}|{opt_latency}".encode())
     return h.hexdigest()
+
+# --- precaching helpers ---
+def _cache_key_simple(text: str, voice: str) -> str:
+    return hashlib.sha256(f"{voice}|{text}".encode("utf-8")).hexdigest()
+
+def _mp3_path(key: str) -> Path:
+    return CACHE_DIR / f"{key}.mp3"
+
+# Reuse your synth function used by /api/tts, e.g. synth_to_file(text, voice, out_path)
+async def elevenlabs_tts_to_file(text: str, voice: str, out_path: Path) -> str:
+    """Synthesize text to speech and save to file, returns the URL path"""
+    try:
+        data = await tts_bytes(text, voice, MODEL_ID)
+        with open(out_path, "wb") as f:
+            f.write(data)
+        return f"/cache/{out_path.name}"
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {e}")
+
+class PrecacheReq(BaseModel):
+    text: str
+    voice: Optional[str] = None
+
+_precache_lock = Lock()
+
+@app.post("/precache_text")
+async def precache_text(req: PrecacheReq, x_tenant_key: Optional[str] = Header(default=None)):
+    # optional: enforce tenant like other endpoints
+    # if TENANT_KEYS and x_tenant_key not in TENANT_KEYS: raise HTTPException(401, "bad tenant")
+    voice = req.voice or os.getenv("VOICE_ID", "")
+    if not req.text.strip():
+        raise HTTPException(400, "text required")
+    key = _cache_key_simple(req.text, voice)
+    outp = _mp3_path(key)
+    created = False
+    with _precache_lock:
+        if not outp.exists():
+            # synth_to_file should call ElevenLabs and write MP3 to outp
+            url = await elevenlabs_tts_to_file(req.text, voice, outp)  # <-- use your existing function name
+            created = True
+    return {"ok": True, "created": created, "audioUrl": f"/cache/{outp.name}"}
+
+@app.get("/precache_status")
+def precache_status(text: str, voice: Optional[str] = None):
+    voice = voice or os.getenv("VOICE_ID", "")
+    key = _cache_key_simple(text, voice)
+    outp = _mp3_path(key)
+    return {"ok": True, "exists": outp.exists(), "audioUrl": f"/cache/{outp.name}" if outp.exists() else None}
 
 def stream_with_cache(text: str, voice: str, model: str,
                       stability: float, similarity: float, style: float,

@@ -1,11 +1,17 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <link rel="icon" href="data:,">
-
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Listen Demo</title>
+  <!-- Media Chrome (professional audio UI) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@1/dist/media-chrome.min.js"></script>
+
+  <!-- Our small theme for the popout -->
+  <link rel="stylesheet" href="/static/mini-player.css">
+
+  <link rel="stylesheet" href="/static/pro-player.css">
+  <script defer src="/static/pro-player.js"></script>
   <!-- Paste your Figma CSS here or <link rel="stylesheet" href="/web/player.css"> -->
   <style>
     /* Optional: simple fallback if you haven't pasted Figma yet */
@@ -17,6 +23,8 @@
 </head>
 
 <body>
+  <script defer src="/static/mini-player.js"></script>
+
   <main>
     <h1>AI Listen Demo</h1>
     <article id="demo-article">
@@ -31,15 +39,19 @@
     <button id="closePlayer">Close</button>
   </div>
 
-<script src="/static/tts-widget.v1.js?v=12"
+<!-- Demo: brand "GreenPress" floating pill, bottom-right -->
+<script src="/static/tts-widget.v1.js?v=17"
         data-base="http://127.0.0.1:8000"
-        data-voice="21m00Tcm4TlvDq8ikWAM"></script>
-<script>
-  window.AiListen.init({
-    apiBase: "http://127.0.0.1:8000",
-    voiceId: "21m00Tcm4TlvDq8ikWAM",
-    selector: "article"
-  });
+        data-voice="21m00Tcm4TlvDq8ikWAM"
+        data-selector="article"
+        data-variant="inline"
+        data-position="bottom-right"
+        data-label-idle="Listen"
+        data-label-loading="Loading…"
+        data-label-pause="Pause"
+        data-label-error="Error"
+        data-style="background:#0b5;color:#fff;border:1px solid #097;box-shadow:0 8px 24px rgba(0,0,0,.2);border-radius:9999px;padding:10px 14px;font:500 14px/1 system-ui,Segoe UI,Roboto,sans-serif;">
 </script>
+<script>window.AiListen.init();</script>
 </body>
 </html>
