@@ -4,12 +4,13 @@ from pathlib import Path
 from collections import OrderedDict
 from dotenv import load_dotenv; 
 from fastapi import FastAPI, HTTPException, Request, Header
-from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse
+from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse, HTMLResponse
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import Query, Body
 import trafilatura, re, requests as http, json
+from html import escape
 from trafilatura.metadata import extract_metadata
 from typing import Tuple, Optional
 from urllib.parse import urlparse, quote
@@ -1504,3 +1505,32 @@ def tts_full(
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text)
     return Response(content=r.content, media_type="audio/mpeg")
+
+
+TEMPLATE = Path("static/demo-shell.html")  # <- uses your exact index.html shell
+
+@app.get("/demo", response_class=HTMLResponse)
+async def demo(url: str):
+    # fetch page
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            r.raise_for_status()
+        raw = r.text
+    except Exception as e:
+        return HTMLResponse(f"<h1>Fetch error</h1><pre>{escape(str(e))}</pre>", status_code=502)
+
+    # extract body + title
+    meta = trafilatura.bare_extraction(raw) or {}
+    title = escape(meta.get("title") or "Demo Article")
+    body  = trafilatura.extract(raw, include_comments=False, include_images=False) \
+           or "<p>No article content extracted.</p>"
+
+    # load your shell and inject content
+    html = TEMPLATE.read_text(encoding="utf-8")
+    html = html.replace("{{TITLE}}", title).replace("{{ARTICLE}}", body)
+
+    return HTMLResponse(html, status_code=200)
