@@ -38,16 +38,18 @@
     </article>
   </main>
 
-  <!-- Load mini-player FIRST so AiMini is defined -->
-  <script src="/static/mini-player.js?v=23"></script>
+<!-- load mini first so AiMini exists -->
+  <script src="/static/mini-player.js?v=25"></script>
+
+  <!-- load the UPDATED widget from /static (not root) -->
   <script async
-    src="/static/tts-widget.v1.js?v=23"
+    src="/static/tts-widget.v1.js?v=25"
     data-base="https://aivoicedemo.onrender.com"
     data-voice="21m00Tcm4TlvDq8ikWAM"
     data-tenant="demo"
     data-doc-id="case-study-demo"
     data-preset="news"
-    data-metrics="off"
+    data-metrics="off"           <!-- keep off while testing -->
     data-selector="article"
     data-variant="inline"
     data-position="bottom-right">
