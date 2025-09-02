@@ -4,18 +4,7 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
 (function () {
   const $ = (s, r=document) => r.querySelector(s);
 
-  function sendMetric(apiBase, payload){
-    try{
-      const url = apiBase + "/metric";
-      const body = JSON.stringify(payload);
-      if (navigator.sendBeacon) {
-        const blob = new Blob([body], {type:"application/json"});
-        navigator.sendBeacon(url, blob);
-      } else {
-        fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body}).catch(()=>{});
-      }
-    }catch{}
-  }
+
 
   function fromDataset(script) {
     const d = script?.dataset || {};
@@ -277,13 +266,33 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
       const selector  =  opts.selector  ?? ds.selector;
       const ui        = Object.assign({}, ds.ui, opts.ui || {});
 
+      // ---- metrics (never block UI) ----
+      function metricsSafePing(baseUrl, payload, on = true){
+        if (!on) return;
+        try{
+          if (navigator.sendBeacon) {
+            const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            navigator.sendBeacon(baseUrl + '/metric', blob);
+            return;
+          }
+          // fire-and-forget; swallow errors
+          fetch(baseUrl + '/metric', {
+            method: 'POST',
+            mode: 'cors',
+            keepalive: true,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).catch(()=>{});
+        }catch{}
+      }
+
       // Helper to ensure mini-player is loaded
       async function ensureMiniLoaded(){
         if (window.AiMini) return;
         await new Promise((resolve, reject)=>{
           const s = document.createElement('script');
           // load mini-player from the same host as the widget
-          s.src = new URL('mini-player.js', script.src).toString() + '?v=18';
+          s.src = new URL('mini-player.js', script.src).toString() + '?v=21';
           s.onload = resolve; s.onerror = reject;
           document.head.appendChild(s);
         });
@@ -319,7 +328,8 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
         else { document.body.appendChild(btn); placeFloating(btn, ui.position); }
         
         // count that the player was rendered (for CTR)
-        sendMetric(apiBase, { event: "impression", url: location.href, voice: voiceId });
+        const metricsOn = (script.dataset.metrics || 'on') !== 'off';
+        metricsSafePing(apiBase, { ev: 'impression', ts: Date.now(), href: location.href, voice: voiceId }, metricsOn);
       } else {
         btn.textContent = ui.labelIdle;
         if (ui.className) btn.className = ui.className;
@@ -336,7 +346,8 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
         busy = true; btn.disabled = true; setLabel(ui.labelLoading);
         
         // Track click event
-        sendMetric(apiBase, { event:"click", url: location.href, voice: voiceId });
+        const metricsOn = (script.dataset.metrics || 'on') !== 'off';
+        metricsSafePing(apiBase, { ev: 'click', ts: Date.now(), href: location.href, voice: voiceId }, metricsOn);
         
         try{
           const src = await getAudioUrl(apiBase, tenantKey, voiceId, cleanText(selector));
@@ -370,12 +381,16 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
                miniAudio.src = audioEl.src;
                try { await miniAudio.play(); } catch {}
              }
-             window.AiMini.open({ title: titleEl, subtitle });
-           } catch(e) {
-             console.warn("[AiListen] Failed to load mini-player, falling back to popup:", e);
-             // fallback to basic popup
-             ensurePlayerUI();
-           }
+                           window.AiMini.open({ title: titleEl, subtitle });
+              
+              // optional metrics ping (non-blocking)
+              const metricsOn = (script.dataset.metrics || 'on') !== 'off';
+              metricsSafePing(apiBase, { ev: 'click-listen', ts: Date.now(), href: location.href }, metricsOn);
+            } catch(e) {
+              console.warn("[AiListen] Failed to load mini-player, falling back to popup:", e);
+              // fallback to basic popup
+              ensurePlayerUI();
+            }
         } catch(e){ console.error("[AiListen]", e); setLabel(ui.labelError); }
         finally { busy = false; btn.disabled = false; }
       };
@@ -384,7 +399,8 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
       let listened = 0, _t0 = 0;
       audioEl.addEventListener("play", ()=>{ 
         _t0 = performance.now(); 
-        sendMetric(apiBase,{event:"start",url:location.href,voice:voiceId}); 
+        const metricsOn = (script.dataset.metrics || 'on') !== 'off';
+        metricsSafePing(apiBase, { ev: 'start', ts: Date.now(), href: location.href, voice: voiceId }, metricsOn);
         setLabel(ui.labelPause);
       });
       audioEl.addEventListener("pause",()=>{ 
@@ -399,12 +415,16 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
           listened += (performance.now()-_t0)/1000; 
           _t0=0; 
         }
-        sendMetric(apiBase,{event:"ended", seconds: listened, url: location.href, voice: voiceId});
+        const metricsOn = (script.dataset.metrics || 'on') !== 'off';
+        metricsSafePing(apiBase, { ev: 'ended', ts: Date.now(), seconds: listened, href: location.href, voice: voiceId }, metricsOn);
         listened = 0;
         setLabel(ui.labelIdle);
       });
       window.addEventListener("beforeunload",()=>{ 
-        if(listened>0) sendMetric(apiBase,{event:"stop", seconds: listened, url:location.href, voice: voiceId}); 
+        if(listened>0) {
+          const metricsOn = (script.dataset.metrics || 'on') !== 'off';
+          metricsSafePing(apiBase, { ev: 'stop', ts: Date.now(), seconds: listened, href: location.href, voice: voiceId }, metricsOn);
+        }
       });
     }
   };
