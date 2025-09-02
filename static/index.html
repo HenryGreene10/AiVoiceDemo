@@ -4,113 +4,52 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Listen Demo</title>
-  
-  <!-- Our small theme for the popout -->
+
+  <!-- Mini-player styles (popout) -->
   <link rel="stylesheet" href="/static/mini-player.css">
 
+  <!-- Optional: pro player styles (keep if you use them) -->
+  <link rel="stylesheet" href="/static/pro-player.css">
+
+  <!-- Custom icon masks (optional) -->
   <style>
     :root{
-      --mp-icon: 20px; /* size you want */
+      --mp-icon: 20px;
       --icon-play:  url('/static/icons/my-play.svg');
       --icon-pause: url('/static/icons/my-pause.svg');
       --icon-back:  url('/static/icons/my-back.svg');
       --icon-fwd:   url('/static/icons/my-fwd.svg');
     }
+    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; padding:24px; background:#cdebf3;}
+    main{max-width:720px; margin:0 auto;}
   </style>
   <script>
-    // enable custom icon mode
+    // enable custom icon mode for mini-player.css
     document.documentElement.classList.add('custom-icons');
   </script>
-  <script> window.__AiListenAutoTheme?.(); </script>
-
-
-  <link rel="stylesheet" href="/static/pro-player.css">
-  <script defer src="/static/pro-player.js"></script>
-  <!-- Paste your Figma CSS here or <link rel="stylesheet" href="/web/player.css"> -->
-  <style>
-    /* Optional: simple fallback if you haven't pasted Figma yet */
-    body{font-family:system-ui,Arial;margin:0;padding:24px}
-    .listen-btn{padding:12px 16px;border-radius:9999px;border:0;cursor:pointer}
-    .player{position:fixed;right:16px;bottom:16px;border-radius:16px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.15);display:none}
-    .player.show{display:block}
-  </style>
 </head>
-<body style="background-color:powderblue;"></body>
+
 <body>
-  
-
-  <script defer src="/static/mini-player.js"></script>
-
-  <script>
-    // Optional: bump icon size globally
-    document.documentElement.style.setProperty('--mp-icon', '20px');
-
-    // Swap icons (SVG URLs or inline SVG strings)
-    window.AiMini?.useIcons({
-      play:  '/static/icons/my-play.svg',
-      pause: '/static/icons/my-pause.svg',
-      back:  '/static/icons/my-back.svg',
-      fwd:   '/static/icons/my-fwd.svg'
-    });
-  </script>
-
   <main>
     <h1>AI Listen Demo</h1>
     <article id="demo-article">
-      <p>This is a short sample paragraph for the demo player. Click listen.</p>
+      <p>This is a short sample paragraph for the demo player. Click Listen to hear it.</p>
+      <p>You should see the mini-player open, and resume works if you close/reopen.</p>
     </article>
   </main>
 
-  <!-- Minimal player shell (style this to match Figma) -->
-  <div class="player" id="player">
-    <div id="status">Ready</div>
-    <audio id="audio" controls preload="none"></audio>
-    <button id="closePlayer">Close</button>
-  </div>
+  <!-- Load mini-player FIRST so AiMini is defined -->
+  <script src="/static/mini-player.js?v=20"></script>
 
-<!-- Demo: brand "GreenPress" floating pill, bottom-right -->
-<script src="/static/tts-widget.v1.js?v=17"
-        data-base="http://127.0.0.1:8000"
-        data-voice="21m00Tcm4TlvDq8ikWAM"
-        data-doc-id="ai-listen-demo-homepage"
-        data-selector="article"
-        data-variant="inline"
-        data-position="bottom-right"
-        data-label-idle="Listen"
-        data-label-loading="Loading…"
-        data-label-pause="Pause"
-        data-label-error="Error"
-        data-style="background:#0b5;color:#fff;border:1px solid #097;box-shadow:0 8px 24px rgba(0,0,0,.2);border-radius:9999px;padding:10px 14px;font:500 14px/1 system-ui,Segoe UI,Roboto,sans-serif;">
-</script>
-<script>window.AiListen.init();</script>
+  <!-- (Optional) pro player script if you use it -->
+  <script defer src="/static/pro-player.js"></script>
 
-<script>
-  (function tagFab(){
-    if (document.querySelector('#ai-fab, .ai-fab, [data-ai-fab]')) return;
-    let fab = document.querySelector('button[aria-label="Listen"]');
-    if (!fab) {
-      for (const btn of document.querySelectorAll('button')) {
-        if ((btn.textContent || '').trim().toLowerCase() === 'listen') { fab = btn; break; }
-      }
-    }
-    if (fab) {
-      fab.id = 'ai-fab';
-      fab.classList.add('ai-fab');
-      fab.setAttribute('data-ai-fab','');
-      return;
-    }
-    requestAnimationFrame(tagFab);
-  })();
-</script>
-
-<!-- AI Listen widget -->
-<script async
-  src="https://ai-voice-demo-theta.vercel.app/static/tts-widget.v1.js"
-  data-base="https://aivoicedemo.onrender.com"
-  data-voice="21m00Tcm4TlvDq8ikWAM"
-  data-doc-id="case-study-demo"
-  data-preset="news"
-  data-tenant="demo">
-</script>
-</body>
-</html>
+  <!-- AI Listen widget (points to your HTTPS Render API) -->
+  <script async
+    src="/static/tts-widget.v1.js?v=20"
+    data-base="https://aivoicedemo.onrender.com"
+    data-voice="21m00Tcm4TlvDq8ikWAM"
+    data-tenant="demo"
+    data-doc-id="case-study-demo"
+    data-preset="news"
+    data-metrics="off"          <!-- disable me
