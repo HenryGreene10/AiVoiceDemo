@@ -103,6 +103,10 @@ OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest wi
 # --- app
 app = FastAPI()
 
+# --- Include wrap router
+from server.wrap import router as wrap_router
+app.include_router(wrap_router)
+
 # --- Helper that returns bytes for a chunk (no generator) ---
 async def tts_bytes(
     text: str,

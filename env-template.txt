@@ -1,0 +1,22 @@
+# Copy this to .env and fill in your values
+
+# Strongly recommended
+ALLOW_HEADERS=content-type,x-tenant-key
+TENANT_KEYS_ENABLED=true
+TENANT_KEYS=demo
+RATE_LIMIT_PER_MIN=60
+CACHE_DIR=/data/cache
+CACHE_TTL_SECONDS=604800
+LOG_LEVEL=INFO
+REQUEST_TIMEOUT_SECONDS=30
+
+# Wrapper (URL demo) config
+WRAP_WIDGET_SRC=
+WRAP_API_BASE=
+WRAP_VOICE_ID=
+WRAP_PRESET=
+
+# Optional / feature flags
+USE_SSML=false
+MAX_ARTICLE_BYTES=1500000
+HEALTHZ_TOKEN=

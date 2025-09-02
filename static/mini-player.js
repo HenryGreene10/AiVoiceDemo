@@ -99,6 +99,55 @@
     document.body.insertAdjacentHTML('beforeend', '<div id="ai-overlay"></div>');
   }
 
+  // --- Playback persistence: remember time & rate per document ---------------
+  function makePosStore(audio, meta){
+    // Prefer a stable document key over transient audio src
+    const docKey = (() => {
+      const tag = document.querySelector('script[src*="tts-widget"]');
+      const fromTag   = tag?.dataset?.docId || tag?.dataset?.articleId || null;
+      const fromMeta  = meta?.id || meta?.key || meta?.url || null;
+      const fromGlobal= (typeof window !== 'undefined' && (window.AIL_DOC_ID || window.AIL_ARTICLE_ID)) || null;
+      const urlKey    = location.origin + location.pathname + location.search;
+      return String(fromMeta || fromTag || fromGlobal || urlKey);
+    })();
+
+    const keyFor = () => `aiListen:v2:pos:${docKey}`;
+
+    let lastSaved = 0;
+    const save = () => {
+      try{
+        const now = Date.now();
+        if (now - lastSaved < 500) return; // throttle
+        lastSaved = now;
+        const data = { t: Math.max(0, audio.currentTime || 0),
+                       r: audio.playbackRate || 1, ts: now };
+        const k = keyFor();
+        localStorage.setItem(k, JSON.stringify(data));
+        sessionStorage.setItem(k, JSON.stringify(data));
+      }catch{}
+    };
+
+    const load = () => {
+      try{
+        const k = keyFor();
+        const raw = sessionStorage.getItem(k) || localStorage.getItem(k);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        return (obj && Number.isFinite(obj.t)) ? obj : null;
+      }catch{ return null; }
+    };
+
+    const clearIfEnded = () => {
+      try{
+        const k = keyFor();
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+      }catch{}
+    };
+
+    return { save, load, clearIfEnded };
+  }
+
   // VISUAL pre-hide on press, but keep pointer-events so the click still fires.
   document.addEventListener('pointerdown', (e) => {
     const el = getFab?.();
@@ -208,6 +257,41 @@
     const wrap = ensureMini();
     const q = id => wrap.querySelector(id);
 
+    // --- Remember/restore position
+    const pos = makePosStore(audio, meta);
+
+    function restorePosition(saved){
+      if(!saved) return;
+      const apply = () => {
+        try{
+          if (Number.isFinite(saved.t)) {
+            if (isFinite(audio.duration) && audio.duration > 0) {
+              const clamp = Math.min(Math.max(saved.t, 0), Math.max(0, audio.duration - 0.25));
+              audio.currentTime = clamp;
+            } else {
+              audio.currentTime = Math.max(0, saved.t);
+            }
+          }
+          if (Number.isFinite(saved.r) && saved.r > 0) {
+            audio.playbackRate = saved.r;
+            const rateSel = q('#mp-rate'); if (rateSel) rateSel.value = `${saved.r.toFixed(1)}x`;
+          }
+        }catch{}
+      };
+
+      if (!isFinite(audio.duration) || !(audio.duration > 0)){
+        const once = () => { audio.removeEventListener('loadedmetadata', once);
+                             audio.removeEventListener('durationchange', once);
+                             apply(); };
+        audio.addEventListener('loadedmetadata', once);
+        audio.addEventListener('durationchange', once);
+      }
+      apply();
+    }
+
+    // Early restore attempt
+    restorePosition(pos.load());
+
     // meta
     q('#mp-title').textContent = meta?.title || 'AI Listen';
 
@@ -277,12 +361,22 @@
 
     const totalTimer = setInterval(tryUpdateTotal, 500);
 
-    // keep updating current time
-    audio.addEventListener('timeupdate', setProgress);
+    // Save frequently
+    audio.addEventListener('timeupdate', ()=>{ setProgress(); pos.save(); });
+    audio.addEventListener('pause',      ()=>{ pos.save(); setPlayVisual(false); });
+    audio.addEventListener('ratechange', ()=>{ pos.save(); });
 
+    // Play state
     audio.addEventListener('play',  ()=> setPlayVisual(true));
-    audio.addEventListener('pause', ()=> setPlayVisual(false));
-    audio.addEventListener('ended', ()=> setPlayVisual(false));
+
+    // Clear when finished
+    audio.addEventListener('ended', ()=>{ setPlayVisual(false); pos.clearIfEnded(); });
+
+    // Also try to restore once metadata lands (in addition to early attempt)
+    audio.addEventListener('loadedmetadata', ()=> restorePosition(pos.load()));
+
+    // If the tab hides (navigate/refresh), save once more
+    document.addEventListener('visibilitychange', ()=>{ if(document.hidden) pos.save(); });
 
     // initial state
     total.textContent = '--:--';
@@ -301,6 +395,7 @@
     const closeBtn = q('#mp-close');
 
     function closePlayer(){
+      try{ pos.save(); }catch{}
       try{ audio.pause(); }catch{}
       wrap.classList.remove('show');
       document.getElementById('ai-overlay')?.classList.remove('show');
