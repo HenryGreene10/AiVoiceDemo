@@ -175,6 +175,8 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
     const headers = { "Content-Type": "application/json" };
     if (tenantKey) headers["x-tenant-key"] = tenantKey;
 
+    console.log('[AIL] base=', apiBase, 'tenant=', tenantKey, 'voice=', voiceId);
+
     const r = await fetch(`${apiBase}/api/tts?voice=${encodeURIComponent(voiceId||"")}`, {
       method: "POST", headers, body: JSON.stringify({ text })
     });
@@ -275,6 +277,18 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
       const selector  =  opts.selector  ?? ds.selector;
       const ui        = Object.assign({}, ds.ui, opts.ui || {});
 
+      // Helper to ensure mini-player is loaded
+      async function ensureMiniLoaded(){
+        if (window.AiMini) return;
+        await new Promise((resolve, reject)=>{
+          const s = document.createElement('script');
+          // load mini-player from the same host as the widget
+          s.src = new URL('mini-player.js', script.src).toString() + '?v=18';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
       // audio (singleton)
       let audioEl = document.getElementById("ai-listen-audio");
       if (!audioEl) { audioEl = document.createElement("audio"); audioEl.id="ai-listen-audio"; audioEl.preload="none"; document.body.appendChild(audioEl); }
@@ -340,7 +354,9 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
           const subtitle = authorEl ? `By ${authorEl.trim()}` : location.hostname;
 
                      // open bottom mini-player (non-modal)
-           if (window.AiMini) {
+           try {
+             await ensureMiniLoaded();
+             
              // Apply auto-theme if allowed
              const scriptTag = document.querySelector('script[src*="tts-widget"]');
              const autoThemeAllowed = (scriptTag?.dataset?.autotheme ?? 'true') !== 'false';
@@ -355,10 +371,11 @@ if (!window.__ttsWidgetLoaded) window.__ttsWidgetLoaded = true;
                try { await miniAudio.play(); } catch {}
              }
              window.AiMini.open({ title: titleEl, subtitle });
-          } else {
-            // fallback to basic popup
-            ensurePlayerUI();
-          }
+           } catch(e) {
+             console.warn("[AiListen] Failed to load mini-player, falling back to popup:", e);
+             // fallback to basic popup
+             ensurePlayerUI();
+           }
         } catch(e){ console.error("[AiListen]", e); setLabel(ui.labelError); }
         finally { busy = false; btn.disabled = false; }
       };
