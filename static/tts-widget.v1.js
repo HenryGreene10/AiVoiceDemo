@@ -1,5 +1,5 @@
 /* v23 — minimal widget: safe CORS, no-block metrics, auto-load mini, open-first */
-console.log('[AIL] widget v25 LIVE', new Date().toISOString());
+console.log('[AIL] widget v27 LIVE', new Date().toISOString());
 
 (() => {
   "use strict";

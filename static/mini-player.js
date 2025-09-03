@@ -1,3 +1,5 @@
+console.log('[AIL] mini v27 LIVE', new Date().toISOString());
+
 (function(){
   const $ = (s,r=document)=>r.querySelector(s);
 
