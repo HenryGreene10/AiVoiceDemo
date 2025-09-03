@@ -38,18 +38,35 @@
     </article>
   </main>
 
+  <!-- Block any metrics calls at fetch level -->
+  <script>
+    (function(){
+      const _fetch = window.fetch;
+      window.fetch = function(url, opts, ...rest){
+        try{
+          const u = typeof url === 'string' ? url : (url && url.url) || '';
+          if (u.includes('/metric')) {
+            // swallow metrics completely
+            return Promise.resolve(new Response(null, { status: 204 }));
+          }
+        }catch{}
+        return _fetch.apply(this, arguments);
+      };
+    })();
+  </script>
+
   <!-- load mini first -->
-  <script src="/static/mini-player.js?v=27"></script>
+  <script src="/static/mini-player.js?v=101"></script>
 
   <!-- load the widget (single canonical path) -->
   <script async
-    src="/static/tts-widget.v1.js?v=27"
+    src="/static/tts-widget.v1.js?v=101"
     data-base="https://aivoicedemo.onrender.com"
     data-voice="21m00Tcm4TlvDq8ikWAM"
     data-tenant="demo"
     data-doc-id="case-study-demo"
     data-preset="news"
-    data-metrics="off"      
+    data-metrics="off"
     data-selector="article"
     data-variant="inline"
     data-position="bottom-right">
