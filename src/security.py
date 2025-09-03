@@ -4,6 +4,7 @@ import time
 import hashlib
 import base64
 from typing import Set
+from fastapi import HTTPException, Request
 
 
 def allowed_origins_set() -> Set[str]:
@@ -41,4 +42,16 @@ def verify_token(token: str, origin: str, path: str) -> bool:
     good = _b64url(hmac.new(secret, msg, hashlib.sha256).digest())
     return _consteq(good, sig_b64)
 
+
+# ---- Tenant key enforcement ----
+TENANT_KEYS = {s.strip() for s in os.getenv("TENANT_KEYS", "demo").split(",") if s.strip()}
+TENANT_OPTIONAL = os.getenv("TENANT_OPTIONAL", "0") == "1"
+
+
+async def require_tenant(request: Request):
+    if TENANT_OPTIONAL:
+        return
+    key = (request.headers.get("x-tenant-key") or "").strip()
+    if not key or key not in TENANT_KEYS:
+        raise HTTPException(status_code=401, detail="Missing or invalid tenant key.")
 
