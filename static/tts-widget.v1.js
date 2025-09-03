@@ -1,5 +1,19 @@
+// v106 - metrics OFF, open-first flow, hard-guard against unhandled rejections
+console.log('[AIL] widget v106 LIVE', new Date().toISOString());
+
+// Never let metric calls block or throw
+const __AIL_METRICS_ON__ = false;
+function metricsSafePing(){ /* no-op */ }
+
+// Swallow any promise rejections from legacy metric code (safety belt)
+window.addEventListener('unhandledrejection', (e)=>{
+  try {
+    const msg = String(e.reason || '');
+    if (msg.includes('/metric')) { e.preventDefault(); return; }
+  } catch {}
+}, true);
+
 /* v23 — minimal widget: safe CORS, no-block metrics, auto-load mini, open-first */
-console.log('[AIL] widget v27 LIVE', new Date().toISOString());
 
 (() => {
   "use strict";
@@ -65,9 +79,9 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
   function getTitle() {
     return (
       pickMeta([
-        'meta[property="og:title"]',
-        'meta[name="twitter:title"]',
-        'meta[name="title"]'
+      'meta[property="og:title"]',
+      'meta[name="twitter:title"]',
+      'meta[name="title"]'
       ]) ||
       document.querySelector("h1")?.innerText ||
       document.title ||
@@ -78,11 +92,11 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
   function getAuthor() {
     return (
       pickMeta([
-        'meta[name="author"]',
-        'meta[property="article:author"]',
-        '[rel="author"]',
-        '[itemprop="author"]',
-        '.byline, .author, .c-byline, .post-author'
+      'meta[name="author"]',
+      'meta[property="article:author"]',
+      '[rel="author"]',
+      '[itemprop="author"]',
+      '.byline, .author, .c-byline, .post-author'
       ]) || ""
     ).trim();
   }
@@ -102,7 +116,7 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
 
     clone.querySelectorAll(
       [
-        "nav","header","footer","aside","form",
+      "nav","header","footer","aside","form",
         "script","style","noscript","svg","video","audio","canvas",
         ".share",".ads,.advert,.sponsor",".subscribe",".paywall",
         "#ai-fab","#ai-listen-btn","#ai-listen-audio"
@@ -134,22 +148,7 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
 
   // ---------- non-blocking metrics helper ----------
   function metricsSafePing(baseUrl, payload, on) {
-    if (!on) return;
-    try {
-      if (navigator.sendBeacon) {
-        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-        navigator.sendBeacon(baseUrl + "/metric", blob);
-        return;
-      }
-      // Fire-and-forget; swallow errors
-      fetch(baseUrl + "/metric", {
-        method: "POST",
-        mode: "cors",
-        keepalive: true,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
-      }).catch(() => {});
-    } catch {}
+    /* no-op - metrics disabled */
   }
 
   // ---------- ensure mini-player is present ----------
@@ -239,10 +238,10 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
         if (ui.className) btn.className = ui.className;
         if (ui.style) btn.setAttribute("style", ui.style);
         else applyAutoTheme(btn, ui.autoTheme);
-
+        
         if (ui.variant === "inline") {
           ( $(selector) || document.body ).appendChild(btn);
-        } else {
+      } else {
           document.body.appendChild(btn);
           placeFloating(btn, ui.position);
         }
@@ -261,44 +260,61 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
       let busy = false;
       const setLabel = (t) => (btn.textContent = t);
 
-      btn.addEventListener("click", async (ev) => {
+      btn.addEventListener('click', async (ev) => {
         ev.preventDefault();
         if (busy) return;
-        busy = true;
-        btn.disabled = true;
-        setLabel(ui.labelLoading);
-
+        busy = true; btn.disabled = true; setLabel(ui.labelLoading);
+        
         try {
-          // 1) make sure mini code is loaded & open immediately
-          await ensureMiniLoaded(script.src);
-          const title = getTitle() || "AI Listen";
-          const author = getAuthor();
-          const subtitle = author ? `By ${author}` : location.hostname;
-          window.AiMini.open({ title, subtitle });
-
-          // 2) (non-blocking) metrics click
-          metricsSafePing(apiBase, { ev: "click", ts: Date.now(), href: location.href }, metrics);
-
-          // 3) build text & request TTS
-          const text = buildPrompt(selector);
-          const audioUrl = await getAudioUrl(apiBase, tenant, voiceId, text, preset);
-
-          // 4) hand audio to the mini's audio element
-          const miniAudio = window.AiMini.audio?.() || $("#ai-listen-audio");
-          if (miniAudio) {
-            miniAudio.autoplay = true;
-            miniAudio.src = audioUrl;
-            try { await miniAudio.play(); } catch {}
-            setLabel(ui.labelPause);
+          // 1) load mini code if needed
+          if (!window.AiMini) {
+            await new Promise((resolve, reject)=>{
+              const s = document.createElement('script');
+              // load relative to this widget file
+              const base = (document.currentScript && document.currentScript.src) || location.href;
+              s.src = new URL('mini-player.js', base).toString() + '?v=106';
+              s.onload = resolve; s.onerror = reject;
+              document.head.appendChild(s);
+            });
           }
+
+          // 2) open mini BEFORE any network
+          const title = (document.querySelector('h1')?.innerText || document.title || 'AI Listen').trim();
+          const author = (document.querySelector('meta[name="author"]')?.content || '').trim();
+          window.AiMini.open({ title, subtitle: author ? `By ${author}` : location.hostname });
+
+          // 3) build text to send
+          const text = (() => {
+            const t = document.querySelector('h1')?.innerText || document.title || '';
+            let b = '';
+            document.querySelectorAll('article,main,p,li,blockquote').forEach(n=>{
+              const s=(n.innerText||'').replace(/\s+/g,' ').trim(); if(s) b+=s+' ';
+            });
+            const out = [t, b].join(' ').replace(/\s+/g,' ').trim();
+            return out.slice(0,1200) || 'This article has no readable text.';
+          })();
+
+          // 4) request TTS (JSON API); hand off to the mini's audio
+          const headers = { 'content-type':'application/json' };
+          if (tenant) headers['x-tenant-key'] = tenant;
+
+          const r = await fetch(apiBase + '/api/tts', {
+            method: 'POST', headers,
+            body: JSON.stringify({ text, voice_id: voiceId || undefined, preset })
+          });
+          const raw = await r.text();
+          if (!r.ok) throw new Error(`TTS ${r.status}: ${raw}`);
+          const j = JSON.parse(raw);
+          let url = j.audioUrl || j.audio_url || j.url;
+          if (url && !/^https?:\/\//i.test(url)) url = apiBase + url;
+
+          const a = (window.AiMini.audio?.() || document.getElementById('ai-listen-audio'));
+          if (a && url) { a.src = url; a.autoplay = true; try{ await a.play(); }catch{} setLabel(ui.labelPause); }
         } catch (e) {
-          console.error("[AIL] failed:", e);
+          console.error('[AIL] click failed', e);
           setLabel(ui.labelError);
-          // bring button back if something blew up early
-          btn.disabled = false;
         } finally {
-          busy = false;
-          btn.disabled = false;
+          busy = false; btn.disabled = false;
         }
       });
 
@@ -312,3 +328,4 @@ console.log('[AIL] widget v27 LIVE', new Date().toISOString());
   // Auto-init if the page just includes the script
   try { window.AiListen.init(); } catch (e) { console.error("[AIL] init error", e); }
 })();
+  
