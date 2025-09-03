@@ -54,9 +54,8 @@ allow_headers = _split("ALLOW_HEADERS", "content-type,x-tenant-key")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins if "*" not in allow_origins else ["*"],
-    allow_origin_regex=".*" if "*" in allow_origins else None,
-    allow_credentials=False,
+    allow_origins=["https://ai-voice-demo-theta.vercel.app/"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=allow_headers,
     expose_headers=["*"],
