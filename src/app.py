@@ -147,44 +147,34 @@ class ExtractReq(BaseModel):
 
 
 @app.post("/api/extract")
-async def extract(req: ExtractReq, x_tenant_key: str = Header(...)):
-    if x_tenant_key != TENANT:
+def extract_post(req: ExtractReq, x_tenant_key: str | None = Header(default=None)):
+    if not x_tenant_key:
         raise HTTPException(status_code=401, detail="Missing or invalid tenant key.")
-
-    # fetch
     try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            r = await client.get(
-                req.url,
-                headers={"user-agent": "AIListenBot/1.0 (+demo)"},
-            )
-            r.raise_for_status()
+        r = requests.get(
+            req.url,
+            headers={"user-agent": "AIListenBot/1.0 (+demo)"},
+            timeout=12,
+        )
+        r.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"fetch_failed: {e}")
 
-    # parse
     try:
-        doc   = Document(r.text)
+        doc = Document(r.text)
         title = (doc.short_title() or "").strip()
-        html  = doc.summary(html_partial=True)
-        text  = " ".join(BS(html, "lxml").stripped_strings)[:12000]
+        html = doc.summary(html_partial=True)
+        text = " ".join(BS(html, "lxml").stripped_strings)[:12000]
         if not text:
             raise ValueError("no_readable_text")
         return {"title": title, "text": text}
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"parse_failed: {e}")
 
-# Optional GET variant for quick curl/browser tests
-@app.get("/api/extract")
-async def extract_get(
-    url: str,
-    x_tenant_key: str = Header(...)
-):
-    return await extract(ExtractReq(url=url), x_tenant_key)
-    
 @app.get("/api/extract")
 def extract_get(url: str, x_tenant_key: str | None = Header(default=None)):
-    return extract(ExtractReq(url=url), x_tenant_key)
+    # reuse the POST logic
+    return extract_post(ExtractReq(url=url), x_tenant_key)
 
 
 class TokenReq(BaseModel):
