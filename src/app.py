@@ -10,8 +10,8 @@ from typing import Optional
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request, Depends, Query, Header
 from pydantic import BaseModel
 from mangum import Mangum
 import requests
