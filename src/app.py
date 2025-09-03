@@ -14,6 +14,9 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from mangum import Mangum
+import requests
+import bs4
+from readability import Document
 
 from fastapi.security import (
     OAuth2PasswordBearer,
@@ -145,6 +148,37 @@ async def tts(req: Request):
     except Exception:
         _ = {}
     return JSONResponse({"audioUrl": "/media/ok.mp3"})
+
+
+class ExtractReq(BaseModel):
+    url: str
+
+
+@app.post("/api/extract")
+def extract(req: ExtractReq):
+    try:
+        resp = requests.get(
+            req.url,
+            headers={"user-agent": "AIListenBot/1.0 (+demo)"},
+            timeout=12,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"fetch_failed: {e}")
+
+    html = resp.text
+    try:
+        doc = Document(html)
+        title = (doc.short_title() or "").strip()
+        summary_html = doc.summary(html_partial=True)
+        text = " ".join(bs4.BeautifulSoup(summary_html, "lxml").stripped_strings)
+        # clamp for safety / cost control
+        text = text[:12000]
+        if not text:
+            raise ValueError("no_readable_text")
+        return {"title": title, "text": text}
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"parse_failed: {e}")
 
 
 class TokenReq(BaseModel):

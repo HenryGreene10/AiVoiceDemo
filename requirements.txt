@@ -11,3 +11,6 @@ gunicorn>=21.2
 uvicorn[standard]>=0.30
 python-dotenv>=1.0
 fastapi>=0.111
+readability-lxml
+beautifulsoup4
+lxml

@@ -20,6 +20,20 @@
     }
     body{font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; padding:24px; background:#cdebf3;}
     main{max-width:720px; margin:0 auto;}
+
+
+        /* === Article highlight styles (scoped so they won't touch the player) === */
+    #demo-article .sent { 
+      transition: background-color .15s;
+      border-radius: .35rem;
+      padding: 0 .1rem;            /* tiny padding so highlight looks clean */
+    }
+    #demo-article .sent.current { 
+      background: rgba(255, 230, 140, .6);  /* active sentence */
+    }
+    #demo-article .sent.read { 
+      background: rgba(140, 220, 255, .20); /* finished sentences */
+    }
   </style>
   <script>
     // enable custom icon mode for mini-player.css
@@ -28,6 +42,17 @@
 </head>
 
 <body>
+  <form id="urlForm" style="display:flex;gap:8px;max-width:720px;margin:0 auto 16px">
+    <input id="urlInput" type="url" inputmode="url" required
+           placeholder="Paste an article URL"
+           style="flex:1;padding:10px;border-radius:10px;border:1px solid #cdd">
+    <button id="urlGo" type="submit" disabled>Load</button>
+    <label style="display:flex;gap:6px;align-items:center;white-space:nowrap">
+      <input id="hlToggle" type="checkbox" checked>
+      Highlight
+    </label>
+  </form>
+  
   <main>
     <h1>AI Listen Demo</h1>
     <article id="demo-article">
@@ -35,6 +60,189 @@
       <p>You should see the mini-player open, and resume works if you close/reopen.</p>
     </article>
   </main>
+
+<!-- TTS widget -->
+<script>
+  (() => {
+    const $  = s => document.querySelector(s);
+    const art = $('#demo-article');
+    const input = $('#urlInput');
+    const go = $('#urlGo');
+    const hlToggle = $('#hlToggle');
+  
+    // 1) Enable button only when URL looks valid
+    input.addEventListener('input', () => {
+      go.disabled = !/^https?:\/\//i.test(input.value.trim());
+    });
+  
+    // Current article state for TTS + highlighting
+    let current = {
+      rawText: '',
+      sentences: [],
+      cumulWeights: [], // cumulative char weights (for timing map)
+      boundaries: [],   // seconds for each sentence boundary
+    };
+  
+    // Split text into sentences (simple + robust enough)
+    function splitSentences(t) {
+      // keep punctuation as delimiter; avoid empty
+      const parts = t
+        .replace(/\s+/g, ' ')
+        .trim()
+        .match(/[^.!?]+[.!?]|\S+/g) || [];
+      return parts.map(s => s.trim()).filter(Boolean);
+    }
+  
+    // Render sentences as spans
+    function renderSentences(sentences) {
+      art.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      sentences.forEach((s, i) => {
+        const span = document.createElement('span');
+        span.className = 'sent';
+        span.dataset.i = i;
+        span.textContent = s + ' ';
+        frag.appendChild(span);
+      });
+      art.appendChild(frag);
+    }
+  
+    // Build timing map proportional to char length -> total audio duration
+    function buildBoundaries(audio, sentences) {
+      const weights = sentences.map(s => Math.max(5, s.length)); // min weight
+      const total = weights.reduce((a,b) => a+b, 0) || 1;
+      const dur = isFinite(audio.duration) ? Math.max(1, audio.duration) : 60;
+      const boundaries = [];
+      let acc = 0;
+      for (const w of weights) {
+        acc += (w / total) * dur;
+        boundaries.push(acc);
+      }
+      return boundaries;
+    }
+  
+    // Highlight logic
+    let lastIdx = -1;
+    function updateHighlight(t, boundaries) {
+      if (!hlToggle.checked || boundaries.length === 0) return;
+      // find first boundary >= t
+      let i = boundaries.findIndex(b => t <= b);
+      if (i === -1) i = boundaries.length - 1;
+      if (i === lastIdx) return;
+      const prev = document.querySelector('.sent.current');
+      prev && prev.classList.remove('current');
+      // mark read up to i-1 (cheap)
+      if (i > 0) {
+        const read = document.querySelectorAll('.sent.read');
+        read.forEach(n => n.classList.remove('read'));
+        for (let k=0; k<i; k++) {
+          const s = document.querySelector(`.sent[data-i="${k}"]`);
+          s && s.classList.add('read');
+        }
+      }
+      const cur = document.querySelector(`.sent[data-i="${i}"]`);
+      if (cur) {
+        cur.classList.add('current');
+        // gentle auto-scroll
+        const r = cur.getBoundingClientRect();
+        if (r.top < 96 || r.bottom > innerHeight - 96) {
+          cur.scrollIntoView({behavior:'smooth', block:'center'});
+        }
+      }
+      lastIdx = i;
+    }
+  
+    // Wire audio events once (mini-player reuses the same element id)
+    function audioEl() {
+      return (window.AiMini?.audio && window.AiMini.audio()) ||
+             document.getElementById('ai-listen-audio');
+    }
+  
+    function wireAudio() {
+      const a = audioEl(); if (!a || a.__wired) return;
+      a.__wired = true;
+  
+      a.addEventListener('loadedmetadata', () => {
+        if (current.sentences.length) {
+          current.boundaries = buildBoundaries(a, current.sentences);
+          lastIdx = -1; // reset
+        }
+      });
+  
+      a.addEventListener('timeupdate', () => {
+        updateHighlight(a.currentTime || 0, current.boundaries || []);
+      });
+  
+      a.addEventListener('ended', () => {
+        // mark all read
+        document.querySelectorAll('.sent').forEach(n => n.classList.add('read'));
+        const cur = document.querySelector('.sent.current');
+        cur && cur.classList.remove('current');
+        lastIdx = -1;
+      });
+    }
+    // try now and later (in case mini loads after)
+    wireAudio();
+    document.addEventListener('readystatechange', wireAudio);
+  
+    // 2) Provide text to widget when it asks
+    window._AIL_PROVIDE_TEXT = async () => current.rawText;
+  
+    // 3) Load URL → extract → render → prep highlight
+    $('#urlForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = input.value.trim();
+      go.disabled = true; go.textContent = 'Loading…';
+  
+      try {
+        const r = await fetch('https://aivoicedemo.onrender.com/api/extract', {
+          method:'POST',
+          headers:{
+            'content-type':'application/json',
+            'x-tenant-key':'demo123'
+          },
+          body: JSON.stringify({ url })
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(()=>({}));
+          throw new Error(err.detail || `extract_failed_${r.status}`);
+        }
+        const { title, text } = await r.json();
+        document.title = title ? `${title} — AI Listen Demo` : document.title;
+  
+        current.rawText = (text || '').trim();
+        current.sentences = splitSentences(current.rawText);
+        renderSentences(current.sentences);
+  
+        // recompute boundaries once audio knows its duration
+        const a = audioEl(); if (a && isFinite(a.duration)) {
+          current.boundaries = buildBoundaries(a, current.sentences);
+        } else {
+          current.boundaries = []; // will build on loadedmetadata
+        }
+  
+        // UX hint
+        go.textContent = 'Loaded • Press Listen';
+      } catch (err) {
+        console.error('[extract]', err);
+        alert('Could not load that URL. Try a different article.');
+        go.textContent = 'Load';
+      } finally {
+        go.disabled = false;
+        wireAudio();
+      }
+    });
+  
+    // Prefill from ?url= for shareable demo links
+    const qs = new URLSearchParams(location.search);
+    const u = qs.get('url');
+    if (u) {
+      input.value = u;
+      go.disabled = !/^https?:\/\//i.test(u);
+      $('#urlForm').dispatchEvent(new Event('submit'));
+    }
+  })();
+  </script>
 
   <!-- Kill ANY /metric calls (fetch, sendBeacon, XHR) -->
   <script>
