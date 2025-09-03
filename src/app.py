@@ -392,7 +392,6 @@ async def api_tts(
     return {"url": url, "cached": False}
 
 
-# Lambda entrypoint
-handler = Mangum(app)
+
 
 
