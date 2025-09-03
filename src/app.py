@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from mangum import Mangum
 import requests
-import bs4
+from bs4 import BeautifulSoup as BS
+from readability import Document
 from readability import Document
 
 from fastapi.security import (
@@ -40,17 +41,6 @@ try:
     import trafilatura
 except Exception:  # pragma: no cover
     trafilatura = None
-
-
-# --- env / config
-REGION = os.getenv("REGION", os.getenv("AWS_REGION", "us-east-1"))
-S3_BUCKET = os.getenv("S3_BUCKET", "")
-MODEL_ID_DEFAULT = os.getenv("MODEL_ID", "eleven_flash_v2_5")
-VOICE_ID_DEFAULT = os.getenv("VOICE_ID", "default")
-MAX_CHARS = int(os.getenv("MAX_CHARS", "2800"))
-MAX_CACHE_BYTES = int(os.getenv("MAX_CACHE_BYTES", "2000000000"))
-SECRETS_ELEVEN_KEY_NAME = os.getenv("ELEVENLABS_SECRET_NAME", "ELEVENLABS_API_KEY")
-
 
 app = FastAPI()
 
@@ -155,30 +145,35 @@ class ExtractReq(BaseModel):
 
 
 @app.post("/api/extract")
-def extract(req: ExtractReq):
+def extract(req: ExtractReq, x_tenant_key: str | None = Header(default=None)):
+    # (optional) tenant check — keep if you already have a validator
+    if not x_tenant_key:  # replace with your real check
+        raise HTTPException(status_code=401, detail="Missing or invalid tenant key.")
+
     try:
-        resp = requests.get(
+        r = requests.get(
             req.url,
             headers={"user-agent": "AIListenBot/1.0 (+demo)"},
             timeout=12,
         )
-        resp.raise_for_status()
+        r.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"fetch_failed: {e}")
 
-    html = resp.text
     try:
-        doc = Document(html)
+        doc = Document(r.text)
         title = (doc.short_title() or "").strip()
-        summary_html = doc.summary(html_partial=True)
-        text = " ".join(bs4.BeautifulSoup(summary_html, "lxml").stripped_strings)
-        # clamp for safety / cost control
-        text = text[:12000]
+        html = doc.summary(html_partial=True)
+        text = " ".join(BS(html, "lxml").stripped_strings)[:12000]
         if not text:
             raise ValueError("no_readable_text")
         return {"title": title, "text": text}
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"parse_failed: {e}")
+    
+@app.get("/api/extract")
+def extract_get(url: str, x_tenant_key: str | None = Header(default=None)):
+    return extract(ExtractReq(url=url), x_tenant_key)
 
 
 class TokenReq(BaseModel):
