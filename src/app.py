@@ -54,11 +54,12 @@ allow_headers = _split("ALLOW_HEADERS", "content-type,x-tenant-key")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ai-voice-demo-theta.vercel.app/"],
+    allow_origins=["https://ai-voice-demo-theta.vercel.app"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=allow_headers,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],           # includes x-tenant-key, content-type, etc.
     expose_headers=["*"],
+    max_age=86400,
 )
 # ---- end CORS ----
 
