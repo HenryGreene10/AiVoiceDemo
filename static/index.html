@@ -5,13 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Listen Demo</title>
 
+  <!-- CSS (root paths; no /static prefix) -->
+  <link rel="stylesheet" href="/mini-player.css?v=108" />
+  <link rel="stylesheet" href="/pro-player.css?v=108" />
+
   <style>
     :root{
       --mp-icon: 20px;
-      --icon-play:  url('/static/icons/my-play.svg');
-      --icon-pause: url('/static/icons/my-pause.svg');
-      --icon-back:  url('/static/icons/my-back.svg');
-      --icon-fwd:   url('/static/icons/my-fwd.svg');
+      /* icons live at /icons/* because Vercel root = static */
+      --icon-play:  url('/icons/my-play.svg');
+      --icon-pause: url('/icons/my-pause.svg');
+      --icon-back:  url('/icons/my-back.svg');
+      --icon-fwd:   url('/icons/my-fwd.svg');
     }
     body{font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; padding:24px; background:#cdebf3;}
     main{max-width:720px; margin:0 auto;}
@@ -31,58 +36,55 @@
     </article>
   </main>
 
-  <!-- Block any metrics calls at fetch level -->
+  <!-- Kill ANY /metric calls (fetch, sendBeacon, XHR) -->
   <script>
-    /* Block ANY /metric call, regardless of how it's sent */
-    (function(){
-      // 1) fetch()
-      const _fetch = window.fetch;
-      window.fetch = function(input, init){
-        try{
-          const u = typeof input === 'string' ? input : (input && input.url) || '';
-          if (u.includes('/metric')) {
-            return Promise.resolve(new Response(null, { status: 204 }));
-          }
-        }catch{}
-        return _fetch.apply(this, arguments);
+  (function(){
+    // fetch
+    const _fetch = window.fetch;
+    window.fetch = function(input, init){
+      try{
+        const u = typeof input === 'string' ? input : (input && input.url) || '';
+        if (u.includes('/metric')) return Promise.resolve(new Response(null, { status: 204 }));
+      }catch{}
+      return _fetch.apply(this, arguments);
+    };
+    // sendBeacon
+    if (navigator.sendBeacon) {
+      const _sb = navigator.sendBeacon.bind(navigator);
+      navigator.sendBeacon = function(url, data){
+        try{ if (String(url).includes('/metric')) return true; }catch{}
+        return _sb(url, data);
       };
-    
-      // 2) navigator.sendBeacon()
-      if (navigator.sendBeacon) {
-        const _sb = navigator.sendBeacon.bind(navigator);
-        navigator.sendBeacon = function(url, data){
-          try{ if (String(url).includes('/metric')) return true; }catch{}
-          return _sb(url, data);
-        };
-      }
-    
-      // 3) XMLHttpRequest
-      const _open = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function(method, url){
-        try{ if (String(url).includes('/metric')) this.__blockMetric = true; }catch{}
-        return _open.apply(this, arguments);
-      };
-      const _send = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.send = function(body){
-        if (this.__blockMetric) { try{ this.onreadystatechange && this.onreadystatechange(); }catch{} return; }
-        return _send.apply(this, arguments);
-      };
-    })();
-    </script>
-    
+    }
+    // XHR
+    const _open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url){
+      try{ if (String(url).includes('/metric')) this.__blockMetric = true; }catch{}
+      return _open.apply(this, arguments);
+    };
+    const _send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(body){
+      if (this.__blockMetric) { try{ this.onreadystatechange && this.onreadystatechange(); }catch{} return; }
+      return _send.apply(this, arguments);
+    };
+  })();
+  </script>
 
-<!-- load mini first -->
-<script src="/static/mini-player.js?v=106"></script>
+  <!-- JS at the bottom; SINGLE load each; root paths -->
+  <script src="/mini-player.js?v=108"></script>
+  <script src="/pro-player.js?v=108" defer></script>
 
-<!-- widget -->
-<script async
-  src="/static/tts-widget.v1.js?v=106"
-  data-base="https://aivoicedemo.onrender.com"
-  data-voice="21m00Tcm4TlvDq8ikWAM"
-  data-tenant="demo"
-  data-doc-id="case-study-demo"
-  data-preset="news"
-  data-metrics="off"
-  data-selector="article"
-  data-variant="inline"
-  data-position="bottom-right"></script>
+  <script async
+    src="/tts-widget.v1.js?v=108"
+    data-base="https://aivoicedemo.onrender.com"
+    data-voice="21m00Tcm4TlvDq8ikWAM"
+    data-tenant="demo"
+    data-doc-id="case-study-demo"
+    data-preset="news"
+    data-metrics="off"
+    data-selector="article"
+    data-variant="inline"
+    data-position="bottom-right">
+  </script>
+</body>
+</html>
