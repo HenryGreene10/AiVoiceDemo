@@ -5,13 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Listen Demo</title>
 
-  <!-- Mini-player styles (popout) -->
-  <link rel="stylesheet" href="/static/mini-player.css">
-
-  <!-- Optional: pro player styles (keep if you use them) -->
-  <link rel="stylesheet" href="/static/pro-player.css">
-
-  <!-- Custom icon masks (optional) -->
   <style>
     :root{
       --mp-icon: 20px;
@@ -55,19 +48,22 @@
     })();
   </script>
 
-  <!-- load mini first -->
-  <script src="/static/mini-player.js?v=101"></script>
+<!-- load mini first -->
+<script src="/static/mini-player.js?v=104"></script>
 
-  <!-- load the widget (single canonical path) -->
-  <script async
-    src="/static/tts-widget.v1.js?v=101"
-    data-base="https://aivoicedemo.onrender.com"
-    data-voice="21m00Tcm4TlvDq8ikWAM"
-    data-tenant="demo"
-    data-doc-id="case-study-demo"
-    data-preset="news"
-    data-metrics="off"
-    data-selector="article"
-    data-variant="inline"
-    data-position="bottom-right">
-  </script>
+<!-- widget -->
+<script async
+  src="/static/tts-widget.v1.js?v=104"
+  data-base="https://aivoicedemo.onrender.com"
+  data-voice="21m00Tcm4TlvDq8ikWAM"
+  data-tenant="demo"
+  data-doc-id="case-study-demo"
+  data-preset="news"
+  data-metrics="off"
+  data-selector="article"
+  data-variant="inline"
+  data-position="bottom-right">
+</script>
+
+<!-- (optional) pro player -->
+<script src="/static/pro-player.js?v=104" defer></script>
