@@ -50,6 +50,24 @@ SECRETS_ELEVEN_KEY_NAME = os.getenv("ELEVENLABS_SECRET_NAME", "ELEVENLABS_API_KE
 
 app = FastAPI()
 
+# ---- CORS (do this BEFORE including routers) ----
+def _split(env: str, default: str):
+    return [x.strip() for x in os.getenv(env, default).split(",") if x.strip()]
+
+allow_origins = _split("ALLOW_ORIGINS", "*")
+allow_headers = _split("ALLOW_HEADERS", "content-type,x-tenant-key")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins if "*" not in allow_origins else ["*"],
+    allow_origin_regex=".*" if "*" in allow_origins else None,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=allow_headers,
+    expose_headers=["*"],
+)
+# ---- end CORS ----
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def allowed_origins_set():
@@ -58,21 +76,13 @@ def allowed_origins_set():
     - "*" or empty => return None (means allow all)
     - otherwise split by comma and return a set of origins
     """
-    raw = os.getenv("ALLOWED_ORIGINS", "*").strip()
+    raw = os.getenv("ALLOW_ORIGINS", "*").strip()
     if not raw or raw == "*":
         return None
     return {part.strip() for part in raw.split(",") if part.strip()}
 
 
 origins = allowed_origins_set()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(origins) if origins else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 # Local cache static mount (for demo/dev without S3)
 if USE_LOCAL:
     import pathlib
