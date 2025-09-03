@@ -1,14 +1,13 @@
+# Dockerfile
 FROM python:3.11-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+ENV PYTHONUNBUFFERED=1
 
-# Gunicorn + Uvicorn workers for prod
-CMD ["sh","-lc","gunicorn -w 1 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:$PORT src.app:app"]
+# Start the FastAPI app with gunicorn/uvicorn.
+# Use shell form so $PORT expands on Render. Default to 10000 locally.
+CMD sh -c 'gunicorn -w 1 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-10000} src.app:app'

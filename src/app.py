@@ -13,7 +13,6 @@ import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Request, Depends, Query, Header
 from pydantic import BaseModel
-from mangum import Mangum
 import requests
 from bs4 import BeautifulSoup as BS
 from readability import Document
