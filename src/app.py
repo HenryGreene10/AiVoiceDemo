@@ -8,6 +8,7 @@ import json
 from typing import Optional
 
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -89,6 +90,9 @@ if USE_LOCAL:
     LOCAL_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/cache", StaticFiles(directory=str(LOCAL_DIR)), name="cache")
 
+# Serve media (e.g., ok.mp3) for quick playback verification
+app.mount("/media", StaticFiles(directory=".", html=False), name="media")
+
 
 # --- secrets (cached on cold start)
 _ELEVEN_API_KEY: Optional[str] = None
@@ -129,6 +133,18 @@ async def get_http() -> httpx.AsyncClient:
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+# ---- TEMP demo TTS endpoint ----
+# Returns a known mp3 url so the mini can play immediately.
+# Replace this later with your real TTS logic.
+@app.post("/api/tts")
+async def tts(req: Request):
+    try:
+        _ = await req.json()
+    except Exception:
+        _ = {}
+    return JSONResponse({"audioUrl": "/media/ok.mp3"})
 
 
 class TokenReq(BaseModel):
