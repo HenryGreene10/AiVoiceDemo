@@ -17,7 +17,7 @@ from mangum import Mangum
 import requests
 from bs4 import BeautifulSoup as BS
 from readability import Document
-from readability import Document
+import boto3
 
 from fastapi.security import (
     OAuth2PasswordBearer,
@@ -36,6 +36,8 @@ from src.storage import (
 )
 from src.prosody import shape_text_for_tone, sentiment_from_title
 from src.metrics import append_stream_row
+
+TENANT = os.getenv("TENANT_KEY", "demo123")
 
 try:
     import trafilatura
@@ -145,31 +147,40 @@ class ExtractReq(BaseModel):
 
 
 @app.post("/api/extract")
-def extract(req: ExtractReq, x_tenant_key: str | None = Header(default=None)):
-    # (optional) tenant check — keep if you already have a validator
-    if not x_tenant_key:  # replace with your real check
+async def extract(req: ExtractReq, x_tenant_key: str = Header(...)):
+    if x_tenant_key != TENANT:
         raise HTTPException(status_code=401, detail="Missing or invalid tenant key.")
 
+    # fetch
     try:
-        r = requests.get(
-            req.url,
-            headers={"user-agent": "AIListenBot/1.0 (+demo)"},
-            timeout=12,
-        )
-        r.raise_for_status()
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get(
+                req.url,
+                headers={"user-agent": "AIListenBot/1.0 (+demo)"},
+            )
+            r.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"fetch_failed: {e}")
 
+    # parse
     try:
-        doc = Document(r.text)
+        doc   = Document(r.text)
         title = (doc.short_title() or "").strip()
-        html = doc.summary(html_partial=True)
-        text = " ".join(BS(html, "lxml").stripped_strings)[:12000]
+        html  = doc.summary(html_partial=True)
+        text  = " ".join(BS(html, "lxml").stripped_strings)[:12000]
         if not text:
             raise ValueError("no_readable_text")
         return {"title": title, "text": text}
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"parse_failed: {e}")
+
+# Optional GET variant for quick curl/browser tests
+@app.get("/api/extract")
+async def extract_get(
+    url: str,
+    x_tenant_key: str = Header(...)
+):
+    return await extract(ExtractReq(url=url), x_tenant_key)
     
 @app.get("/api/extract")
 def extract_get(url: str, x_tenant_key: str | None = Header(default=None)):
