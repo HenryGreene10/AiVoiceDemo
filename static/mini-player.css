@@ -33,8 +33,9 @@
 #ai-listen-btn, .listen-btn{
   position: static !important;       /* cancel any fixed/floating */
   background: inherit !important;    /* match page bg */
-  color: inherit !important;         /* match page text */
-  border: 3px solid color-mix(in srgb, currentColor 40%, transparent);
+  color: inherit !important;
+  align-items: center; gap: 8px;       
+  border: 3px solid color-mix(in srgb, currentColor 12%, transparent);
   border-radius: 9999px;
   padding: 8px 14px;
   font-weight: 650;
