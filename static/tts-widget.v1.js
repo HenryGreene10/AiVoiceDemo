@@ -341,6 +341,9 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
           try {
             await a.play();
           } catch {}
+
+          // ensure timebar labels bind after mini is open
+          try { window.AIL_bindTimebar && window.AIL_bindTimebar(); } catch {}
         } catch (e) {
           console.error("[AIL] Listen click failed:", e);
           try {

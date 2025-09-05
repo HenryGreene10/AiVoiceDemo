@@ -164,57 +164,66 @@
   </script>
   
   <script>
-    // ==== time labels for mini player ====
-    (function(){
-      function fmt(t){
-        if (!isFinite(t) || t < 0) return "0:00";
-        const m = Math.floor(t / 60);
-        const s = Math.floor(t % 60);
-        return m + ":" + (s < 10 ? "0"+s : s);
+  (function(){
+    function fmt(t){ if(!isFinite(t)||t<0) return "0:00";
+      const m=Math.floor(t/60), s=Math.floor(t%60);
+      return m+":"+(s<10?"0"+s:s);
+    }
+
+    function bindWhenReady(){
+      const mini = document.getElementById("ai-mini");
+      if (!mini) return;
+
+      // wait for the meter row to exist (.ai-meter or .ai-progress)
+      const target = mini.querySelector(".ai-meter, .ai-progress");
+      if (target) return bind(target);
+
+      const mo = new MutationObserver(() => {
+        const t = mini.querySelector(".ai-meter, .ai-progress");
+        if (t){ mo.disconnect(); bind(t); }
+      });
+      mo.observe(mini, { childList:true, subtree:true });
+    }
+
+    function bind(target){
+      // create row if missing
+      let row = target.parentElement.querySelector(".ai-timebar");
+      if (!row){
+        row = document.createElement("div");
+        row.className = "ai-timebar";
+        row.innerHTML = `<span data-ai-elapsed>0:00</span><span data-ai-total>0:00</span>`;
+        // place right after the meter/progress
+        (target.parentElement || target).appendChild(row);
       }
-    
-      function ensureTimebar(root){
-        let row = root.querySelector(".ai-timebar");
-        if (!row) {
-          row = document.createElement("div");
-          row.className = "ai-timebar";
-          row.innerHTML = `<span data-ai-elapsed>0:00</span><span data-ai-total>0:00</span>`;
-          // place under the progress bar if present, else at end of meter
-          const meter = root.querySelector(".ai-progress") || root.querySelector(".ai-meter") || root;
-          meter.appendChild(row);
-        }
-        return row;
+      const el  = row.querySelector("[data-ai-elapsed]");
+      const tot = row.querySelector("[data-ai-total]");
+
+      const a = (window.AiMini && window.AiMini.audio && window.AiMini.audio())
+             || document.getElementById("ai-listen-audio");
+      if (!a) return;
+
+      const updTot = () => { if (tot) tot.textContent = fmt(a.duration); };
+      const updCur = () => { if (el)  el.textContent  = fmt(a.currentTime); };
+      a.addEventListener("loadedmetadata", updTot);
+      a.addEventListener("durationchange",  updTot);
+      a.addEventListener("timeupdate",      updCur);
+      a.addEventListener("ended",           updCur);
+      updTot(); updCur();
+    }
+
+    // call this anytime you open the mini
+    window.AIL_bindTimebar = function(){
+      // wait until #ai-mini exists, then bind
+      if (document.getElementById("ai-mini")) bindWhenReady();
+      else {
+        const mo = new MutationObserver(()=>{
+          if (document.getElementById("ai-mini")){ mo.disconnect(); bindWhenReady(); }
+        });
+        mo.observe(document.body, { childList:true, subtree:true });
       }
-    
-      function bindTimebar(audio, root){
-        if (!audio || !root) return;
-        if (audio.__timebarBound) return;     // bind once per audio element
-        audio.__timebarBound = true;
-    
-        const row = ensureTimebar(root);
-        const el  = row.querySelector("[data-ai-elapsed]");
-        const tot = row.querySelector("[data-ai-total]");
-    
-        function updateTotal(){ if (tot) tot.textContent = fmt(audio.duration); }
-        function updateElapsed(){ if (el) el.textContent = fmt(audio.currentTime); }
-    
-        audio.addEventListener("loadedmetadata", updateTotal);
-        audio.addEventListener("durationchange",  updateTotal);
-        audio.addEventListener("timeupdate",      updateElapsed);
-        audio.addEventListener("ended",           ()=>{ if (el) el.textContent = fmt(audio.duration); });
-        // set initial values
-        updateTotal(); updateElapsed();
-      }
-    
-      // expose a tiny helper you can call right after AiMini.open()
-      window.AIL_bindTimebar = function(){
-        const root  = document.getElementById("ai-mini");        // mini wrapper
-        const audio = (window.AiMini && window.AiMini.audio && window.AiMini.audio()) 
-                      || document.getElementById("ai-listen-audio");
-        if (root && audio) bindTimebar(audio, root);
-      };
-    })();
-    </script>
+    };
+  })();
+  </script>
     
     <script>
       (function(){
