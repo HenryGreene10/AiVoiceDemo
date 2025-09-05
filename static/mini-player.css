@@ -209,6 +209,9 @@ body:has(#ai-mini.show) [data-ai-fab]{
   display: flex; justify-content: space-between;
   font-size: 12px; color: var(--mp-muted);
 }
+.ai-timebar span {
+  color: #000;
+}
 
 /* Controls row */
 .ai-controls{

@@ -133,25 +133,45 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
   // --- narration shaping (Title → Subtitle → By Author → Body) ---
   function buildNarration(selector) {
-    const title = getTitle();
-    const subtitle = getSubtitle();
-    const author = getAuthor();
-    let body = getBody(selector);
+    const container = document.querySelector(selector) || document.querySelector("#demo-article") || document.body;
 
-    // de-dup title and author lines if body starts with them
+    const title = (document.querySelector("h1")?.innerText || "").trim();
+    const subtitle = (document.querySelector(".dek, .subtitle, h2")?.innerText || "").trim();
+    const author = (document.querySelector(".byline")?.textContent || "").replace(/^By\s*/i,"").trim();
+
+    // collect story text only
+    const clone = container.cloneNode(true);
+    clone.querySelectorAll([
+      "figure,figcaption,picture,video,iframe,svg,canvas",
+      ".caption,.credit,.media,.gallery,.photo",
+      "sup,sub,.citation,[role='doc-footnote'],.footnotes,.references",
+      "aside,.related,.read-more,.recommended",
+      "nav,header,footer,form,script,style"
+    ].join(",")).forEach(n => n.remove());
+
+    // paragraphs/lists/quotes as blocks
+    const blocks = [];
+    clone.querySelectorAll("p,li,blockquote").forEach(n => {
+      const s = (n.innerText || "").replace(/\s+/g," ").trim();
+      if (s) blocks.push(s);
+    });
+
+    let body = blocks.join(" ").trim();
+
+    // de-dup title/byline if repeated at body start
     if (title && body.toLowerCase().startsWith(title.toLowerCase())) {
       body = body.slice(title.length).trim();
     }
-    body = stripLeadingByLines(body);
+    body = body.replace(/^\s*By\s+.+?(\.\s+|  +|\n+)/i, "");
 
+    // paragraph breaks → natural pauses in most TTS
     const parts = [];
-    if (title) parts.push(title);
-    if (subtitle) parts.push(subtitle);
-    if (author) parts.push(`By ${author}`);
-    if (body) parts.push(body);
+    if (title)   parts.push(title);
+    if (subtitle)parts.push(subtitle);
+    if (author)  parts.push(`By ${author}`);
+    if (body)    parts.push(body);
 
-    // Paragraph gaps create natural pauses with most TTS engines
-    const plain = parts.join("\n\n").slice(0, 12000); // generous cap
+    const plain = parts.join("\n\n").slice(0, 15000); // generous safety cap
     return { plain, title, subtitle, author, body };
   }
 
@@ -190,6 +210,43 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     if (!/^https?:\/\//i.test(url)) url = apiBase + url;
     return url;
   }
+  
+  function numberToWordsUS(num){ // supports 0..999,999,999
+    const ones=["zero","one","two","three","four","five","six","seven","eight","nine"];
+    const teens=["ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
+    const tens=["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
+    function chunk(n){
+      let s="";
+      const h=Math.floor(n/100), t=n%100;
+      if(h) s+=ones[h]+" hundred";
+      if(t){ if(s) s+=" ";
+        if(t<10) s+=ones[t];
+        else if(t<20) s+=teens[t-10];
+        else { s+=tens[Math.floor(t/10)]; if(t%10) s+="-"+ones[t%10]; }
+      }
+      return s || "zero";
+    }
+    if (num===0) return "zero";
+    const parts=[], units=[""," thousand"," million"," billion"];
+    let i=0;
+    while(num>0 && i<units.length){
+      const c=num%1000;
+      if(c) parts.unshift(chunk(c)+units[i]);
+      num=Math.floor(num/1000); i++;
+    }
+    return parts.join(" ");
+  }
+  function normalizeNumbers(text){
+    // 13,000 → thirteen thousand ; 250000 → two hundred fifty thousand
+    return text.replace(/\b\d{1,3}(?:,\d{3})+\b|\b\d{4,9}\b/g, m => {
+      const n = Number(m.replace(/,/g,""));
+      if (!Number.isFinite(n)) return m;
+      return numberToWordsUS(n);
+    });
+  }
+
+
+
 
   // --- public init ---
   window.AiListen = {
@@ -259,13 +316,8 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
           await ensureMiniLoaded(srcBase);
 
           const { plain, title, subtitle, author } = buildNarration(selector);
-          const subline = subtitle || (author ? `By ${author}` : location.hostname);
-          window.AiMini.open({
-            title: title || document.title || "AI Listen",
-            subtitle: subline
-          });
-
-          const url = await getAudioUrl(apiBase, tenant, voiceId, plain, preset);
+          const spoken = normalizeNumbers(plain);           
+          const url = await getAudioUrl(apiBase, tenant, voiceId, spoken, preset);
 
           const a = window.AiMini.audio?.() || audioEl;
           try {
