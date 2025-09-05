@@ -34,7 +34,7 @@
   position: static !important;       /* cancel any fixed/floating */
   background: inherit !important;    /* match page bg */
   color: inherit !important;         /* match page text */
-  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border: 3px solid color-mix(in srgb, currentColor 40%, transparent);
   border-radius: 9999px;
   padding: 8px 14px;
   font-weight: 650;
@@ -43,7 +43,7 @@
   cursor: pointer;
   display: inline-flex; align-items: center; gap: 8px;
 }
-#ai-listen-btn:hover{ filter: brightness(0.98); }
+#ai-listen-btn:hover{ filter: brightness(0.98); border-color: color-mix(in srgb, currentColor 55%, transparent); }
 #ai-listen-btn:active{ transform: translateY(1px); }
 
 /* 5) Mobile niceties */
