@@ -1,3 +1,80 @@
+
+/* 1) REMOVE CLOSE '×' + reclaim space */
+.ai-close { display: none !important; }
+.ai-card { padding-top: 12px; } /* was larger because of the × area */
+
+/* 2) TITLE: no overlap, true ellipsis */
+.ai-title{
+  display:block;
+  max-width: 100%;
+  min-width: 0;
+  font-weight: 650; font-size: 15px; line-height: 1.25;
+  margin: 0 0 8px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* 3) MINI-PLAYER: stays bottom-right, no interaction with Listen button */
+#ai-mini{
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateY(120%) scale(.98);
+  opacity: 0;
+  transition: transform .18s ease, opacity .18s ease;
+  z-index: 999998;
+}
+#ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
+#ai-mini.hidden{ pointer-events: none; }
+
+/* 4) LISTEN BUTTON: stable, inline near author/byline (NO auto-hide) */
+/* Add this if your article header has a wrapper */
+.article-header .byline {
+  display: flex;
+  align-items: center;
+  gap: 10px;       /* space between author and button */
+  flex-wrap: wrap; /* safe on small screens */
+}
+
+.article-header .byline #ai-fab {
+  position: static !important;   /* cancel out fixed positioning */
+  margin-left: 12px;             /* spacing from author name */
+}
+
+/* Generic Listen button look that matches page */
+.listen-btn,
+#ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
+  position: static !important;        /* not fixed: lives in the header row */
+  background: inherit !important;     /* match page bg */
+  color: inherit !important;          /* match page text color */
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0,0,0,.12);
+  cursor: pointer;
+}
+
+/* Hover/active polish */
+.listen-btn:hover{ filter: brightness(0.98); }
+.listen-btn:active{ transform: translateY(1px); }
+
+/* 5) DISABLE any global auto-hide rules for FAB while mini is open */
+body:has(#ai-mini.show) #ai-fab,
+body:has(#ai-mini.show) .ai-fab,
+body:has(#ai-mini.show) [data-ai-fab]{
+  display: inline-flex !important;   /* keep it visible */
+}
+
+/* 6) MOBILE niceties */
+@media (max-width: 480px){
+  .listen-btn{ padding: 8px 12px; font-size: 14px; }
+  .ai-card{ width: min(96vw, 420px); }
+}
+
 /* ---- Mini Player • Compact Card v3 (clean) ---- */
 :root{
   /* theme (kept for shadows/borders only) */
