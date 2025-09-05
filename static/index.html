@@ -42,10 +42,42 @@
 
 <script>
   (function(){
-    const BASE   = "https://aivoicedemo.onrender.com";   // your backend
-    const VOICE  = "21m00Tcm4TlvDq8ikWAM";               // your ElevenLabs voice
-    const TENANT = "demo123";                             // optional header
-    const SEL    = "#demo-article";                       // article container
+    const BASE   = "https://aivoicedemo.onrender.com";
+    const VOICE  = "21m00Tcm4TlvDq8ikWAM";
+    const TENANT = "demo123";
+    const SEL    = "#demo-article";
+  
+    // --- helpers ---
+    function firstWords(str, n=5){
+      const words = (str || "").trim().split(/\s+/);
+      return words.length <= n ? (str || "") : words.slice(0,n).join(" ") + "…";
+    }
+    // 13,000 -> thirteen thousand (simple US English cardinals up to billions)
+    function numberToWordsUS(num){
+      const ones=["zero","one","two","three","four","five","six","seven","eight","nine"];
+      const teens=["ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
+      const tens=["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
+      function chunk(n){
+        let s=""; const h=Math.floor(n/100), t=n%100;
+        if (h) s += ones[h]+" hundred";
+        if (t){ if (s) s+=" ";
+          if (t<10) s+=ones[t];
+          else if (t<20) s+=teens[t-10];
+          else { s+=tens[Math.floor(t/10)]; if (t%10) s+="-"+ones[t%10]; }
+        }
+        return s || "zero";
+      }
+      if (num===0) return "zero";
+      const units=[""," thousand"," million"," billion"]; const parts=[];
+      for (let i=0; num>0 && i<units.length; i++){ const c=num%1000; if (c) parts.unshift(chunk(c)+units[i]); num=Math.floor(num/1000); }
+      return parts.join(" ");
+    }
+    function normalizeNumbers(text){
+      return text.replace(/\b\d{1,3}(?:,\d{3})+\b|\b\d{4,9}\b/g, m => {
+        const n = Number(m.replace(/,/g,""));
+        return Number.isFinite(n) ? numberToWordsUS(n) : m;
+      });
+    }
   
     async function ensureMini(){
       if (window.AiMini) return;
@@ -58,78 +90,79 @@
     }
   
     function buildText(){
-      const h1  = document.querySelector("h1")?.innerText?.trim() || "AI Listen";
-      const dek = document.querySelector(".dek,.subtitle,h2")?.innerText?.trim() || "";
-      const by  = (document.querySelector(".byline")?.textContent || "")
-                    .replace(/^By\s*/i,"").trim();
+      const h1 = (document.querySelector("h1")?.innerText || "AI Listen").trim();
+      const dek = (document.querySelector(".dek,.subtitle,h2")?.innerText || "").trim();
+      const by  = (document.querySelector(".byline")?.textContent || "").replace(/^By\s*/i,"").trim();
+  
       let body = "";
       (document.querySelector(SEL) || document.body)
         .querySelectorAll("p,li,blockquote")
-        .forEach(n => { const s=(n.innerText||"").replace(/\s+/g," ").trim(); if (s) body += s + " "; });
+        .forEach(n => { const s=(n.innerText||"").replace(/\s+/g," ").trim(); if (s) body+=s+" "; });
   
-      // de-dup if body starts with the title/byline
       if (body.toLowerCase().startsWith(h1.toLowerCase())) body = body.slice(h1.length).trim();
       body = body.replace(/^\s*By\s+.+?\s{2,}/i,"");
   
-      return [h1, dek, by ? `By ${by}` : "", body].filter(Boolean).join("\n\n").slice(0,12000);
+      const plain = [h1, dek, by ? `By ${by}` : "", body].filter(Boolean).join("\n\n").slice(0, 12000);
+      return { h1, dek, by, plain };
     }
   
+    let busy = false;
     async function play(){
-      await ensureMini();
+      if (busy) return;
+      busy = true;
+      try{
+        await ensureMini();
   
-      const h1  = document.querySelector("h1")?.innerText?.trim() || "AI Listen";
-      const sub = (document.querySelector(".dek")?.innerText?.trim())
-               || (document.querySelector(".byline")?.textContent?.trim())
-               || location.hostname;
+        const { h1, dek, plain } = buildText();
+        const pageTitle = h1 || "AI Listen";
+        const subRaw    = dek || (document.querySelector(".byline")?.textContent?.trim()) || location.hostname;
   
-      // open mini immediately
-      function firstWords(str, n=5){
-        const words = (str || "").trim().split(/\s+/);
-        if (words.length <= n) return str || "";
-        return words.slice(0,n).join(" ") + "…";
+        // Open mini immediately with truncated title
+        window.AiMini.open({ title: firstWords(pageTitle, 5), subtitle: firstWords(subRaw, 5) });
+        // Tooltip with full title
+        setTimeout(()=>{ const t=document.querySelector("#ai-mini .ai-title"); if (t) t.title = pageTitle; }, 0);
+        // Bind timebar labels
+        window.AIL_bindTimebar && window.AIL_bindTimebar();
+  
+        // Request TTS (use number-normalized text)
+        const spoken = normalizeNumbers(plain);
+        const r = await fetch(BASE + "/api/tts", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-tenant-key": TENANT },
+          body: JSON.stringify({ text: spoken, voice_id: VOICE, preset: "news" })
+        });
+        const raw = await r.text();
+        if (!r.ok) throw new Error(`TTS ${r.status}: ${raw}`);
+        const j = JSON.parse(raw);
+        let url = j.audioUrl || j.audio_url || j.url;
+        if (url && !/^https?:\/\//i.test(url)) url = BASE + url;
+  
+        const a = window.AiMini.audio?.() || document.getElementById("ai-listen-audio") || (()=> {
+          const el=document.createElement("audio"); el.id="ai-listen-audio"; document.body.appendChild(el); return el;
+        })();
+        try{ a.pause(); a.removeAttribute("src"); a.currentTime = 0; }catch{}
+        a.src = url; a.preload = "auto";
+        a.addEventListener("canplay", ()=> a.play().catch(()=>{}), { once:true });
+        a.load();
+      } catch(e){
+        console.error("[AIL hotfix] play failed", e);
+        alert("Playback error (see console).");
+      } finally {
+        busy = false;
       }
-      const displayTitle = firstWords(title || document.title || "AI Listen", 5);
-      const subline = firstWords(subtitle || (author ? `By ${author}` : location.hostname), 5);
-      window.AiMini.open({ title: displayTitle, subtitle: subline });
-      setTimeout(()=>{ const t = document.querySelector("#ai-mini .ai-title"); if (t) t.title = title || ""; }, 0);
-
-  
-      // request TTS
-      const text = buildText();
-      const spoken = normalizeNumbers(text);
-      const r = await fetch(BASE + "/api/tts", {
-        method:"POST",
-        headers:{ "content-type":"application/json", "x-tenant-key":TENANT },
-        body: JSON.stringify({ text, voice_id: VOICE, preset: "news" })
-      });
-      const raw = await r.text();
-      if (!r.ok) throw new Error(`TTS ${r.status}: ${raw}`);
-      const j = JSON.parse(raw);
-      let url = j.audioUrl || j.audio_url || j.url;
-      if (url && !/^https?:\/\//i.test(url)) url = BASE + url;
-  
-      const a = window.AiMini.audio?.() || document.getElementById("ai-listen-audio") || (()=> {
-        const el=document.createElement("audio"); el.id="ai-listen-audio"; document.body.appendChild(el); return el;
-      })();
-      try{ a.pause(); a.removeAttribute("src"); a.currentTime = 0; }catch{}
-      a.src = url; a.preload="auto";
-      a.addEventListener("canplay", ()=> a.play().catch(()=>{}), {once:true});
-      a.load();
     }
   
-    // bind to your visible button
-    window.addEventListener("click", e=>{
+    // Bind to your visible button (and stop other handlers from double-firing)
+    document.addEventListener("click", (e)=>{
       const btn = e.target.closest("#ai-listen-btn");
       if (!btn) return;
       e.preventDefault();
-      play().catch(err=>{
-        console.error("[AIL hotfix] play failed", err);
-        alert("Playback error (see console).");
-      });
+      e.stopImmediatePropagation();
+      play();
     });
   })();
   </script>
-
+  
   <script>
     // ==== time labels for mini player ====
     (function(){
@@ -183,7 +216,51 @@
     })();
     </script>
     
-
+    <script>
+      (function(){
+        function attach(mini){
+          const root = document.documentElement;
+      
+          function setPad(){
+            // Measure the card and add some breathing room
+            const h = mini.offsetHeight || 120;
+            root.style.setProperty('--ai-mini-pad', (h + 16) + 'px');
+            root.classList.add('ai-mini-open');
+          }
+          function clearPad(){
+            root.classList.remove('ai-mini-open');
+          }
+      
+          // Watch the mini for visibility changes
+          const mo = new MutationObserver(() => {
+            if (mini.classList.contains('show')) setPad(); else clearPad();
+          });
+          mo.observe(mini, { attributes: true, attributeFilter: ['class','style'] });
+      
+          // Recompute on resize/rotation
+          window.addEventListener('resize', () => {
+            if (mini.classList.contains('show')) setPad();
+          });
+      
+          // If it started visible, pad now
+          if (mini.classList.contains('show')) setPad();
+        }
+      
+        // Wait for #ai-mini to exist (widget inserts it)
+        function waitForMini(){
+          const mini = document.getElementById('ai-mini');
+          if (mini) return attach(mini);
+          const obs = new MutationObserver(() => {
+            const el = document.getElementById('ai-mini');
+            if (el){ obs.disconnect(); attach(el); }
+          });
+          obs.observe(document.body, { childList: true, subtree: true });
+        }
+      
+        if (document.readyState !== 'loading') waitForMini();
+        else document.addEventListener('DOMContentLoaded', waitForMini);
+      })();
+      </script>
 
   
   
@@ -246,13 +323,13 @@
        You do NOT need any button-mover or SSML scripts.
        The widget loads the mini-player and places the Listen pill for you.
        Attach any ElevenLabs pronunciation dictionary to the same voice you use below. -->
-  <script
-    src="/tts-widget.v108.js"
-    data-base="https://aivoicedemo.onrender.com"
-    data-voice="21m00Tcm4TlvDq8ikWAM"           
-    data-tenant="demo123"                       
-    data-selector="#demo-article">               
-  </script>
+  <script async
+       src="/tts-widget.v1.js?v=108"
+       data-base="https://aivoicedemo.onrender.com"
+       data-voice="21m00Tcm4TlvDq8ikWAM"
+       data-tenant="demo123"
+       data-selector="#demo-article">
+    </script>
 
   <!-- (Optional) If you also ship a pronunciation dictionary file in ElevenLabs,
        you don't need to change this HTML: just attach that dictionary to the voice

@@ -319,4 +319,32 @@ html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(-
 }
 #ai-overlay.show{ pointer-events:auto; opacity:1; }
 
+/* Always sit above the iOS home bar */
+#ai-mini{
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 999998;
+}
+
+/* Mobile/tablet: center & span safely so it doesn’t overlap text */
+@media (max-width: 768px){
+  #ai-mini{
+    left: 12px;               /* center it */
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  #ai-mini .ai-card{
+    width: 100%;              /* fill the available width inside the margins */
+    max-width: 640px;         /* optional ceiling */
+  }
+}
+
+/* Reserve space when open (JS toggles .ai-mini-open) */
+html.ai-mini-open body,
+html.ai-mini-open main{
+  padding-bottom: calc(var(--ai-mini-pad, 140px) + env(safe-area-inset-bottom));
+}
+
+
  
