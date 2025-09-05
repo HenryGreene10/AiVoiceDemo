@@ -34,6 +34,98 @@
   </script>
 </head>
 
+
+
+
+
+
+
+<script>
+  (function(){
+    const BASE   = "https://aivoicedemo.onrender.com";   // your backend
+    const VOICE  = "21m00Tcm4TlvDq8ikWAM";               // your ElevenLabs voice
+    const TENANT = "demo123";                             // optional header
+    const SEL    = "#demo-article";                       // article container
+  
+    async function ensureMini(){
+      if (window.AiMini) return;
+      await new Promise((resolve, reject)=>{
+        const s=document.createElement("script");
+        s.src="/mini-player.js?v=108";
+        s.onload=resolve; s.onerror=reject;
+        document.head.appendChild(s);
+      });
+    }
+  
+    function buildText(){
+      const h1  = document.querySelector("h1")?.innerText?.trim() || "AI Listen";
+      const dek = document.querySelector(".dek,.subtitle,h2")?.innerText?.trim() || "";
+      const by  = (document.querySelector(".byline")?.textContent || "")
+                    .replace(/^By\s*/i,"").trim();
+      let body = "";
+      (document.querySelector(SEL) || document.body)
+        .querySelectorAll("p,li,blockquote")
+        .forEach(n => { const s=(n.innerText||"").replace(/\s+/g," ").trim(); if (s) body += s + " "; });
+  
+      // de-dup if body starts with the title/byline
+      if (body.toLowerCase().startsWith(h1.toLowerCase())) body = body.slice(h1.length).trim();
+      body = body.replace(/^\s*By\s+.+?\s{2,}/i,"");
+  
+      return [h1, dek, by ? `By ${by}` : "", body].filter(Boolean).join("\n\n").slice(0,12000);
+    }
+  
+    async function play(){
+      await ensureMini();
+  
+      const h1  = document.querySelector("h1")?.innerText?.trim() || "AI Listen";
+      const sub = (document.querySelector(".dek")?.innerText?.trim())
+               || (document.querySelector(".byline")?.textContent?.trim())
+               || location.hostname;
+  
+      // open mini immediately
+      window.AiMini.open({ title: h1, subtitle: sub });
+  
+      // request TTS
+      const text = buildText();
+      const r = await fetch(BASE + "/api/tts", {
+        method:"POST",
+        headers:{ "content-type":"application/json", "x-tenant-key":TENANT },
+        body: JSON.stringify({ text, voice_id: VOICE, preset: "news" })
+      });
+      const raw = await r.text();
+      if (!r.ok) throw new Error(`TTS ${r.status}: ${raw}`);
+      const j = JSON.parse(raw);
+      let url = j.audioUrl || j.audio_url || j.url;
+      if (url && !/^https?:\/\//i.test(url)) url = BASE + url;
+  
+      const a = window.AiMini.audio?.() || document.getElementById("ai-listen-audio") || (()=> {
+        const el=document.createElement("audio"); el.id="ai-listen-audio"; document.body.appendChild(el); return el;
+      })();
+      try{ a.pause(); a.removeAttribute("src"); a.currentTime = 0; }catch{}
+      a.src = url; a.preload="auto";
+      a.addEventListener("canplay", ()=> a.play().catch(()=>{}), {once:true});
+      a.load();
+    }
+  
+    // bind to your visible button
+    window.addEventListener("click", e=>{
+      const btn = e.target.closest("#ai-listen-btn");
+      if (!btn) return;
+      e.preventDefault();
+      play().catch(err=>{
+        console.error("[AIL hotfix] play failed", err);
+        alert("Playback error (see console).");
+      });
+    });
+  })();
+  </script>
+
+
+  
+  
+
+
+
 <body>
   <!-- ===== Article content (the reader pulls text from #demo-article) ===== -->
   <main class="article">
