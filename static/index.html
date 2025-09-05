@@ -1,170 +1,79 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <!-- ===== Page metadata (keep title for SEO; the reader uses <h1>) ===== -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AI Listen Demo</title>
+  <title>Where should archaeologists dig next?</title>
+  <meta name="description" content="OpenAI contest winners used machine learning to predict new archaeological sites in the Amazon." />
+  <meta name="author" content="National Geographic Staff" />
 
-  <!-- CSS (root paths; no /static prefix) -->
+  <!-- ===== Player styles (serve these from your root) ===== -->
   <link rel="stylesheet" href="/mini-player.css?v=108" />
   <link rel="stylesheet" href="/pro-player.css?v=108" />
 
+  <!-- ===== Page look + icon variables for mini-player (optional) ===== -->
   <style>
     :root{
+      /* custom icons for the mini-player (optional) */
       --mp-icon: 20px;
-      /* icons live at /icons/* because Vercel root = static */
       --icon-play:  url('/icons/my-play.svg');
       --icon-pause: url('/icons/my-pause.svg');
       --icon-back:  url('/icons/my-back.svg');
       --icon-fwd:   url('/icons/my-fwd.svg');
     }
-    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; padding:24px; background:#cdebf3;}
-    main{max-width:720px; margin:0 auto;}
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0; padding: 24px; background: #cdebf3;
+    }
+    main{ max-width: 720px; margin: 0 auto; }
   </style>
   <script>
-    // enable custom icon mode for mini-player.css
+    /* Enables the CSS mask-icon mode in mini-player.css */
     document.documentElement.classList.add('custom-icons');
   </script>
 </head>
 
-
-<script>
-  // where you want the button to live (edit to match your DOM)
-  const BYLINE_SELECTOR = ".article-header .byline";  // e.g., near author/date
-
-  function moveFabIntoByline() {
-    const fab = document.getElementById("ai-fab");
-    const byline = document.querySelector(BYLINE_SELECTOR);
-    if (fab && byline && !byline.contains(fab)) {
-      byline.appendChild(fab);
-      // ensure inline look
-      fab.style.position = "static";
-      fab.classList.add("listen-btn");
-    }
-  }
-
-  // Try immediately, then watch for dynamic loads
-  moveFabIntoByline();
-  const mo = new MutationObserver(moveFabIntoByline);
-  mo.observe(document.documentElement, { childList: true, subtree: true });
-</script>
-
-<script>
-  // Call this to build the narration text/SSML for the current article
-  function buildNarration() {
-    const titleEl    = document.querySelector("h1");
-    const subEl      = document.querySelector("h2, .dek, .subtitle");
-    const authorEl   = document.querySelector(".byline [rel='author'], .byline .author, .byline");
-
-    const title   = (titleEl?.innerText || "").trim();
-    const subtitle= (subEl?.innerText || "").trim();
-    const author  = (authorEl?.innerText || "").replace(/^By\s*/i,"").trim();
-
-    // Clone main article node and strip non-story bits
-    const article = document.querySelector("article, .article-body, .story-body") || document.body;
-    const bodyClone = article.cloneNode(true);
-
-    // remove elements we don't want spoken
-    bodyClone.querySelectorAll([
-      "figure","figcaption","picture","video","iframe",
-      ".caption",".media",".photo",".gallery",
-      "sup","sub",".citation","[role='doc-footnote']",
-      "aside",".footnotes",".references",".related",
-      "nav","script","style"
-    ].join(",")).forEach(n => n.remove());
-
-    // Get text and de-dup title if it reappears as first line
-    let bodyText = (bodyClone.innerText || "").trim();
-    if (title && bodyText.toLowerCase().startsWith(title.toLowerCase())) {
-      bodyText = bodyText.slice(title.length).trim();
-    }
-
-    // Build SSML with short pauses (fallback to plain text if your TTS isn’t in SSML mode)
-    const ssml =
-`<speak>
-  ${title ? `<p>${escapeXml(title)}</p><break time="400ms"/>` : ""}
-  ${subtitle ? `<p>${escapeXml(subtitle)}</p><break time="350ms"/>` : ""}
-  ${author ? `<p>By ${escapeXml(author)}</p><break time="500ms"/>` : ""}
-  <p>${escapeXml(bodyText)}</p>
-</speak>`;
-
-    return { ssml, title, subtitle, author, bodyText };
-  }
-
-  function escapeXml(s){
-    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-            .replace(/\"/g,"&quot;").replace(/\'/g,"&apos;");
-  }
-</script>
-
-
 <body>
-  <main>
-    <h1>Phases of the moon, explained.</h1>
-    <article id="demo-article">
-      <p>Earth's moon phases cycle from month to month, waning and waxing in its constant transformation from new moon to full moon and back again.
+  <!-- ===== Article content (the reader pulls text from #demo-article) ===== -->
+  <main class="article">
+    <header class="article-header">
+      <!-- H1 is what the mini-player shows as title -->
+      <h1>Where should archaeologists dig next? The winners of this OpenAI contest can tell them.</h1>
 
-        This lunar cycle happens in part because the moon does not produce its own light; the silvery glow we see comes from the sunlight reflecting off the moon's monochrome surface.
-        
-        Another factor that causes lunar phases is a gravitational quirk called tidal locking, which governs our view of the moon. In essence, it takes roughly the same amount of time for the moon to spin once on its axis as it takes for our celestial companion to complete its lunar cycle around Earth, which is about 27.3 days.
-        
-        That means the same side of the moon always faces Earth, although both sides get illuminated as the moon orbits, so there is no perpetual dark side of the moon.
-        
-        As the moon, Earth, and the sun go through their orbital dance, the part of the moon that's illuminated by the sun moves in and out of our view, creating a predictable series of moon phases.
-        
-        In any given month we see eight distinct phases of the moon, defined by how much of the lunar disk is illuminated from our perspective (Northern Hemisphere or Southern Hemisphere) and whether the moon is heading toward or away from being full. Here are all eight of the moon's phases in order.</p>
+      <!-- Optional subheading/dek (read before body with a short pause) -->
+      <p class="dek">Machine learning points to dozens of likely archaeological sites hidden across the Amazon rainforest.</p>
+
+      <!-- Byline (the reader says “By …” once; we strip duplicates from body) -->
+      <div class="byline">By National Geographic Staff</div>
+      <!-- The widget (v108+) will insert the Listen pill right under the H1 -->
+    </header>
+
+    <!-- Paste ONLY readable story text here: paragraphs, lists, blockquotes. -->
+    <!-- You can omit images, captions, embeds, and footnotes (the widget strips them anyway). -->
+    <article id="demo-article" class="article-body">
+      <!-- Replace these sample paragraphs with the NatGeo article text -->
+      <p>The Amazon basin conceals traces of ancient cities beneath dense rainforest canopies. Now, competition-winning models trained on remote-sensing data are flagging dozens of promising sites where archaeologists might dig next.</p>
+      <p>Using LiDAR, DEM rasters, and geospatial patterns from known settlements, teams combined statistical features with machine learning to surface subtle earthworks—circles, causeways, and low mounds—often invisible to the naked eye.</p>
+      <p>While Indigenous knowledge has long pointed to complex Amazonian landscapes, these predictions give field researchers a shortlist for reconnaissance, helping prioritize scarce time and resources for future expeditions.</p>
+      <!-- ...more <p>…</p> blocks as needed ... -->
     </article>
   </main>
 
-  <!-- Kill ANY /metric calls (fetch, sendBeacon, XHR) -->
-  <script>
-  (function(){
-    // fetch
-    const _fetch = window.fetch;
-    window.fetch = function(input, init){
-      try{
-        const u = typeof input === 'string' ? input : (input && input.url) || '';
-        if (u.includes('/metric')) return Promise.resolve(new Response(null, { status: 204 }));
-      }catch{}
-      return _fetch.apply(this, arguments);
-    };
-    // sendBeacon
-    if (navigator.sendBeacon) {
-      const _sb = navigator.sendBeacon.bind(navigator);
-      navigator.sendBeacon = function(url, data){
-        try{ if (String(url).includes('/metric')) return true; }catch{}
-        return _sb(url, data);
-      };
-    }
-    // XHR
-    const _open = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function(method, url){
-      try{ if (String(url).includes('/metric')) this.__blockMetric = true; }catch{}
-      return _open.apply(this, arguments);
-    };
-    const _send = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function(body){
-      if (this.__blockMetric) { try{ this.onreadystatechange && this.onreadystatechange(); }catch{} return; }
-      return _send.apply(this, arguments);
-    };
-  })();
+  <!-- ===== Scripts =====
+       You do NOT need any button-mover or SSML scripts.
+       The widget loads the mini-player and places the Listen pill for you.
+       Attach any ElevenLabs pronunciation dictionary to the same voice you use below. -->
+  <script
+    src="/tts-widget.v108.js"
+    data-base="https://aivoicedemo.onrender.com"   <!-- your backend base -->
+    data-voice="21m00Tcm4TlvDq8ikWAM"             <!-- ElevenLabs voice ID you picked -->
+    data-tenant="demo123"                          <!-- optional: for your backend routing -->
+    data-selector="#demo-article">                 <!-- where to read from -->
   </script>
 
-  <!-- JS at the bottom; SINGLE load each; root paths -->
-  <script src="/mini-player.js?v=108"></script>
-  <script src="/pro-player.js?v=108" defer></script>
-
-  <script async
-    src="/tts-widget.v1.js?v=108"
-    data-base="https://aivoicedemo.onrender.com"
-    data-voice="21m00Tcm4TlvDq8ikWAM"
-    data-tenant="demo123"
-    data-doc-id="case-study-demo"
-    data-preset="news"
-    data-metrics="off"
-    data-selector="article"
-    data-variant="inline"
-    data-position="bottom-right">
-  </script>
+  <!-- (Optional) If you also ship a pronunciation dictionary file in ElevenLabs,
+       you don't need to change this HTML: just attach that dictionary to the voice
+       used in data-voice inside the ElevenLabs dashboard. -->
 </body>
 </html>
