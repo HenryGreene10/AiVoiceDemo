@@ -27,6 +27,77 @@
   </script>
 </head>
 
+
+<script>
+  // where you want the button to live (edit to match your DOM)
+  const BYLINE_SELECTOR = ".article-header .byline";  // e.g., near author/date
+
+  function moveFabIntoByline() {
+    const fab = document.getElementById("ai-fab");
+    const byline = document.querySelector(BYLINE_SELECTOR);
+    if (fab && byline && !byline.contains(fab)) {
+      byline.appendChild(fab);
+      // ensure inline look
+      fab.style.position = "static";
+      fab.classList.add("listen-btn");
+    }
+  }
+
+  // Try immediately, then watch for dynamic loads
+  moveFabIntoByline();
+  const mo = new MutationObserver(moveFabIntoByline);
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+</script>
+
+<script>
+  // Call this to build the narration text/SSML for the current article
+  function buildNarration() {
+    const titleEl    = document.querySelector("h1");
+    const subEl      = document.querySelector("h2, .dek, .subtitle");
+    const authorEl   = document.querySelector(".byline [rel='author'], .byline .author, .byline");
+
+    const title   = (titleEl?.innerText || "").trim();
+    const subtitle= (subEl?.innerText || "").trim();
+    const author  = (authorEl?.innerText || "").replace(/^By\s*/i,"").trim();
+
+    // Clone main article node and strip non-story bits
+    const article = document.querySelector("article, .article-body, .story-body") || document.body;
+    const bodyClone = article.cloneNode(true);
+
+    // remove elements we don't want spoken
+    bodyClone.querySelectorAll([
+      "figure","figcaption","picture","video","iframe",
+      ".caption",".media",".photo",".gallery",
+      "sup","sub",".citation","[role='doc-footnote']",
+      "aside",".footnotes",".references",".related",
+      "nav","script","style"
+    ].join(",")).forEach(n => n.remove());
+
+    // Get text and de-dup title if it reappears as first line
+    let bodyText = (bodyClone.innerText || "").trim();
+    if (title && bodyText.toLowerCase().startsWith(title.toLowerCase())) {
+      bodyText = bodyText.slice(title.length).trim();
+    }
+
+    // Build SSML with short pauses (fallback to plain text if your TTS isn’t in SSML mode)
+    const ssml =
+`<speak>
+  ${title ? `<p>${escapeXml(title)}</p><break time="400ms"/>` : ""}
+  ${subtitle ? `<p>${escapeXml(subtitle)}</p><break time="350ms"/>` : ""}
+  ${author ? `<p>By ${escapeXml(author)}</p><break time="500ms"/>` : ""}
+  <p>${escapeXml(bodyText)}</p>
+</speak>`;
+
+    return { ssml, title, subtitle, author, bodyText };
+  }
+
+  function escapeXml(s){
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+            .replace(/\"/g,"&quot;").replace(/\'/g,"&apos;");
+  }
+</script>
+
+
 <body>
   <main>
     <h1>Phases of the moon, explained.</h1>
