@@ -1,22 +1,22 @@
 
-/* 1) REMOVE CLOSE '×' + reclaim space */
-.ai-close { display: none !important; }
-.ai-card { padding-top: 12px; } /* was larger because of the × area */
+/* === AI Listen overrides (place at very end) === */
 
-/* 2) TITLE: no overlap, true ellipsis */
+/* 1) Remove close (×) and reclaim space */
+.ai-close { display: none !important; }
+.ai-card { padding-top: 12px; }
+
+/* 2) Title: true ellipsis */
 .ai-title{
   display:block;
-  max-width: 100%;
-  min-width: 0;
-  font-weight: 650; font-size: 15px; line-height: 1.25;
-  margin: 0 0 8px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: center;
+  max-width:100%;
+  min-width:0;
+  font-weight:650; font-size:15px; line-height:1.25;
+  margin:0 0 8px 0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  text-align:center;
 }
 
-/* 3) MINI-PLAYER: stays bottom-right, no interaction with Listen button */
+/* 3) Single mini-player placement (keep ONE copy only) */
 #ai-mini{
   position: fixed;
   right: 18px;
@@ -26,8 +26,33 @@
   transition: transform .18s ease, opacity .18s ease;
   z-index: 999998;
 }
-#ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
-#ai-mini.hidden{ pointer-events: none; }
+#ai-mini.show{ transform: translateY(0) scale(1); opacity:1; }
+#ai-mini.hidden{ pointer-events:none; }
+
+/* 4) Listen button: inline pill under the title (not floating) */
+#ai-listen-btn, .listen-btn{
+  position: static !important;       /* cancel any fixed/floating */
+  background: inherit !important;    /* match page bg */
+  color: inherit !important;         /* match page text */
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 9999px;
+  padding: 8px 14px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+#ai-listen-btn:hover{ filter: brightness(0.98); }
+#ai-listen-btn:active{ transform: translateY(1px); }
+
+/* 5) Mobile niceties */
+@media (max-width: 480px){
+  #ai-listen-btn{ padding: 8px 12px; font-size:14px; }
+  .ai-card{ width: min(96vw, 420px); }
+}
+
+ 
 
 /* 4) LISTEN BUTTON: stable, inline near author/byline (NO auto-hide) */
 /* Add this if your article header has a wrapper */
@@ -114,19 +139,7 @@ body:has(#ai-mini.show) [data-ai-fab]{
   --mp-side-nudge-y:   0px;
 }
 
-/* Wrapper (pop-in) */
-#ai-mini{
-  position: fixed;
-  right: 18px;
-  left: auto;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  transform: translateY(120%) scale(.98);
-  opacity: 0;
-  transition: transform .18s ease, opacity .18s ease;
-  z-index: 999998;
-}
-#ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
-#ai-mini.hidden{ pointer-events: none; }
+ 
 
 /* Card */
 .ai-card{
@@ -302,41 +315,4 @@ html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(-
 }
 #ai-overlay.show{ pointer-events:auto; opacity:1; }
 
-/* Listen pill (matches page; keep readable border/shadow) */
-#ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
-  position: fixed;
-  right: 18px;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  background: inherit !important;       /* <- match page background */
-  color: inherit !important;            /* <- match page text color */
-  border: 1px solid var(--mp-border);   /* subtle outline for any theme */
-  border-radius: 999px;
-  padding: 10px 16px;
-  font-weight: 650;
-  box-shadow: 0 10px 30px rgba(0,0,0,.25);
-  transition: transform .18s ease, opacity .18s ease;
-  z-index: 999997;
-}
-
-/* Pre-hide (instant fade on press) */
-#ai-fab.prehide, .ai-fab.prehide, [data-ai-fab].prehide{
-  opacity: 0;
-  transform: translateY(20%);
-}
-
-/* Hidden (JS toggled) */
-#ai-fab.hide, .ai-fab.hide, [data-ai-fab].hide, button[aria-label="Listen"].hide{
-  opacity: 0;
-  transform: translateY(20%);
-  pointer-events: none;
-}
-
-/* Safety net: auto-hide FAB while mini is visible */
-body:has(#ai-mini.show) #ai-fab,
-body:has(#ai-mini.show) .ai-fab,
-body:has(#ai-mini.show) [data-ai-fab],
-body:has(#ai-overlay.show) #ai-fab,
-body:has(#ai-overlay.show) .ai-fab,
-body:has(#ai-overlay.show) [data-ai-fab]{
-  display: none !important;
-}
+ 
