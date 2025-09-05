@@ -1,265 +1,238 @@
 /* ---- Mini Player • Compact Card v3 (clean) ---- */
 :root{
-    /* theme */
-    --mp-font: inherit;
-    --mp-bg: rgba(16, 20, 24, .92);
-    --mp-fg: #EAF2FF;
-    --mp-muted: #9FB4CC;
-    --mp-accent: #4DA3FF;
-    --mp-border: rgba(255,255,255,.10);
-    --mp-radius: 16px;
-    --mp-shadow: 0 20px 50px rgba(0,0,0,.40);
-  
-    /* layout spacing */
-    --mp-gap-top:      20px;  /* title → meter */
-    --mp-gap-bottom:    0px;  /* meter → controls */
-    --mp-controls-gap:  1px;  /* controls extra top margin */
-  
-    /* sizing */
-    --mp-width: 820px;
-  
-    /* buttons and icons */
-    --mp-btn-center: 56px;
-    --mp-btn-side:   42px;
-    --mp-icon-center: 30px;
-    --mp-icon-side:   56px;
-  
-    /* progress (you wanted hairline) */
-    --mp-track-h: 1px;
-    --mp-knob:    4px;
-    --mp-progress-bg: rgba(0,0,0,.18);
-    --mp-progress-fill: #000;
-  
-    /* micro-nudges for icon drawings (adjust if a glyph sits high/low) */
-    --mp-center-nudge-x: 0px;
-    --mp-center-nudge-y: 0px;
-    --mp-side-nudge-x:   -7.5px;
-    --mp-side-nudge-y:   0px;   /* positive = move DOWN */
-  }
-  
-  /* wrapper (pop-in) */
-  #ai-mini{
-    position: fixed;
-    right: 18px;
-    left: auto;
-    bottom: calc(18px + env(safe-area-inset-bottom));
-    transform: translateY(120%) scale(.98);
-    opacity: 0;
-    transition: transform .18s ease, opacity .18s ease;
-    z-index: 999998;
-  }
-  #ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
-  #ai-mini.hidden{ pointer-events: none; }
-  
-  /* card */
-  .ai-card{
-    width: min(var(--mp-width), 96vw);
-    /* make card match host site background */
-    background: inherit !important;
-    /* if you prefer glass from your earlier look, replace with:
-       background: color-mix(in srgb, var(--mp-bg) 92%, transparent);
-       backdrop-filter: blur(10px) saturate(130%);
-    */
-    color: var(--mp-fg);
-    border: 1px solid var(--mp-border);
-    border-radius: var(--mp-radius);
-    box-shadow:
-      0 24px 70px rgba(0,0,0,.48),
-      0 0 0 1px var(--mp-border),
-      0 12px 30px color-mix(in srgb, var(--mp-accent) 22%, transparent);
-         font-family: var(--mp-font);
-     padding: 12px 14px 8px;
-   }
+  /* theme (kept for shadows/borders only) */
+  --mp-font: inherit;
+  --mp-bg: rgba(16, 20, 24, .92);
+  --mp-fg: inherit;                 /* <- text follows page color */
+  --mp-muted: color-mix(in srgb, currentColor 55%, transparent);
+  --mp-accent: color-mix(in srgb, currentColor 40%, #4DA3FF 60%);
+  --mp-border: color-mix(in srgb, currentColor 12%, transparent);
+  --mp-radius: 16px;
+  --mp-shadow: 0 20px 50px rgba(0,0,0,.25);
 
-   
-  
-  /* title */
-  .ai-title{
-    font-weight: 650; font-size: 15px; line-height: 1.25;
-    margin-bottom: 8px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    text-align: center;
-  }
-  
-  /* meter wrapper (progress + timebar) */
-  .ai-meter{ margin-top: var(--mp-gap-top); margin-bottom: var(--mp-gap-bottom); }
-  
+  /* layout spacing */
+  --mp-gap-top:      20px;
+  --mp-gap-bottom:    0px;
+  --mp-controls-gap:  1px;
+
+  /* sizing */
+  --mp-width: 820px;
+
+  /* buttons and icons */
+  --mp-btn-center: 56px;
+  --mp-btn-side:   42px;
+  --mp-icon-center: 30px;
+  --mp-icon-side:   56px;
+
   /* progress */
-  .ai-progress{
-    display: flex; align-items: center; justify-content: center;
-    width: 100%;
-  }
-  .ai-range{
-    -webkit-appearance: none; appearance: none;
-    width: 100%; height: var(--mp-track-h);
-    background: var(--mp-progress-bg);
-    border-radius: 999px; outline: none;
-    margin: 0 8px;
-  }
-  .ai-range::-webkit-slider-thumb{
-    -webkit-appearance: none; appearance: none;
-    width: var(--mp-knob); height: var(--mp-knob);
-    border-radius: 50%;
-    background: var(--mp-progress-fill);
-    border: 0;
-    margin-top: calc((var(--mp-track-h) - var(--mp-knob)) / 2);
-    cursor: pointer;
-  }
-  /* Firefox track/thumb */
-  .ai-range::-moz-range-track{
-    height: var(--mp-track-h); background: var(--mp-progress-bg);
-    border-radius: 999px; border: none;
-  }
-  .ai-range::-moz-range-thumb{
-    width: var(--mp-knob); height: var(--mp-knob);
-    border-radius: 50%; background: var(--mp-progress-fill); border: none;
-  }
-  
-  /* time row */
-  .ai-timebar{
-    margin-top: 6px;
-    display: flex; justify-content: space-between;
-    font-size: 12px; color: var(--mp-muted);
-  }
-  
-  /* controls row */
-  .ai-controls{
-    margin-top: var(--mp-controls-gap);
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    justify-items: center; align-items: center;
-  }
-  
-  /* button boxes */
-  .ai-btn{
-    position: relative;
-    display: block;
-    width: var(--mp-btn-center);
-    height: var(--mp-btn-center);
-    line-height: 0; overflow: hidden;
-    border-radius: 12px;
-    border: 1px solid var(--mp-border);
-    background: color-mix(in srgb, var(--mp-bg) 78%, #fff 22%);
-    color: var(--mp-fg); cursor: pointer;
-    transition: transform .08s ease, border-color .12s ease;
-  }
-  .ai-btn:hover{ border-color: color-mix(in srgb, var(--mp-accent) 60%, transparent); }
-  .ai-btn:active{ transform: translateY(1px) scale(.98); }
-  .ai-btn.side{ width: var(--mp-btn-side); height: var(--mp-btn-side); }
-  
-  /* -------- SINGLE centering method (do not duplicate) -------- */
-  /* Inline SVG/IMG: absolutely center + per-role nudges */
-  .ai-btn svg, .ai-btn img{
-    position: absolute;
-    inset: 0; margin: auto;            /* hard center */
-    width: var(--mp-icon-center);
-    height: var(--mp-icon-center);
-    transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
-  }
-  .ai-btn.side svg, .ai-btn.side img{
-    width: var(--mp-icon-side);
-    height: var(--mp-icon-side);
-    transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
-  }
-  
-  /* Custom icons via mask */
-  :root{
-    --mp-icon: 18px;              /* fallback/global */
-    --icon-play:  ; /* url('/static/icons/play.svg') */
-    --icon-pause: ; /* url('/static/icons/pause.svg') */
-    --icon-back:  ; /* url('/static/icons/back.svg')  */
-    --icon-fwd:  ; /* url('/static/icons/fwd.svg')   */
-  }
-  html.custom-icons .ai-btn svg{ display:none; }
-  html.custom-icons .ai-btn::before{
-    content:"";
-    position:absolute; inset:0; margin:auto;    /* hard center */
-    width: var(--mp-icon-center); height: var(--mp-icon-center);
-    background-color: currentColor;
-    -webkit-mask-repeat:no-repeat; -webkit-mask-position:center; -webkit-mask-size:contain;
-            mask-repeat:no-repeat;         mask-position:center;         mask-size:contain;
-    transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
-  }
-  html.custom-icons .ai-btn.side::before{
-    width: var(--mp-icon-side); height: var(--mp-icon-side);
-    transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
-  }
-  html.custom-icons .ai-btn[data-icon="play"]::before  { -webkit-mask-image: var(--icon-play);  mask-image: var(--icon-play);  }
-  html.custom-icons .ai-btn[data-icon="pause"]::before { -webkit-mask-image: var(--icon-pause); mask-image: var(--icon-pause); }
-  html.custom-icons .ai-btn[data-icon="back"]::before  { -webkit-mask-image: var(--icon-back);  mask-image: var(--icon-back);  }
-  html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(--icon-fwd);   mask-image: var(--icon-fwd);   }
-  /* -------- end single centering method -------- */
-  
-  /* footer / rate */
-  .ai-footer{ margin-top: 6px; display:flex; align-items:flex-end; justify-content:flex-start; }
-  .ai-rate{
-    -webkit-appearance: none; appearance: none;
-    background: transparent; border: 0; padding: 0;
-    font-size: 12px; line-height: 1; color: #000;
-  }
-  
-  /* mobile tweaks */
-  @media (max-width: 420px){
-    .ai-card{ padding: 12px 12px 8px; }
-    .ai-title{ font-size: 14px; }
-    .ai-btn{ width: 40px; height: 40px; }
-    .ai-btn.primary{ width: 50px; height: 50px; }
-  }
+  --mp-track-h: 1px;
+  --mp-knob:    4px;
+  --mp-progress-bg: color-mix(in srgb, currentColor 15%, transparent);
+  --mp-progress-fill: currentColor;
 
+  /* icon nudges */
+  --mp-center-nudge-x: 0px;
+  --mp-center-nudge-y: 0px;
+  --mp-side-nudge-x:   -7.5px;
+  --mp-side-nudge-y:   0px;
+}
 
-  
-  
-  
-  
-  
-  /* Player bottom-right placement (if you haven’t switched yet) */
-  #ai-mini{
-    position: fixed;
-    right: 18px;
-    bottom: calc(18px + env(safe-area-inset-bottom));
-    transform: translateY(120%) scale(.98);
-    opacity: 0;
-    transition: transform .18s ease, opacity .18s ease;
-    z-index: 999998;
-  }
-  #ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
-  #ai-mini.hidden{ pointer-events: none; }
-  
+/* Wrapper (pop-in) */
+#ai-mini{
+  position: fixed;
+  right: 18px;
+  left: auto;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateY(120%) scale(.98);
+  opacity: 0;
+  transition: transform .18s ease, opacity .18s ease;
+  z-index: 999998;
+}
+#ai-mini.show{ transform: translateY(0) scale(1); opacity: 1; }
+#ai-mini.hidden{ pointer-events: none; }
 
+/* Card */
+.ai-card{
+  width: min(var(--mp-width), 96vw);
+  background: inherit !important;      /* <- match page background */
+  color: var(--mp-fg);                  /* <- follow page text color */
+  border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius);
+  box-shadow:
+    0 24px 70px rgba(0,0,0,.28),
+    0 0 0 1px var(--mp-border);
+  font-family: var(--mp-font);
+  padding: 12px 14px 8px;
+}
 
-/* Close (×): just a grey glyph, no box/border */
+/* Title (ellipsis that actually works) */
+.ai-title{
+  display: block;
+  max-width: 100%;
+  min-width: 0;                         /* <- key for ellipsis within flex/grid */
+  font-weight: 650; font-size: 15px; line-height: 1.25;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* Meter wrapper */
+.ai-meter{ margin-top: var(--mp-gap-top); margin-bottom: var(--mp-gap-bottom); }
+
+/* Progress */
+.ai-progress{
+  display: flex; align-items: center; justify-content: center;
+  width: 100%;
+}
+.ai-range{
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: var(--mp-track-h);
+  background: var(--mp-progress-bg);
+  border-radius: 999px; outline: none;
+  margin: 0 8px;
+}
+.ai-range::-webkit-slider-thumb{
+  -webkit-appearance: none; appearance: none;
+  width: var(--mp-knob); height: var(--mp-knob);
+  border-radius: 50%;
+  background: var(--mp-progress-fill);
+  border: 0;
+  margin-top: calc((var(--mp-track-h) - var(--mp-knob)) / 2);
+  cursor: pointer;
+}
+/* Firefox track/thumb */
+.ai-range::-moz-range-track{
+  height: var(--mp-track-h); background: var(--mp-progress-bg);
+  border-radius: 999px; border: none;
+}
+.ai-range::-moz-range-thumb{
+  width: var(--mp-knob); height: var(--mp-knob);
+  border-radius: 50%; background: var(--mp-progress-fill); border: none;
+}
+
+/* Time row */
+.ai-timebar{
+  margin-top: 6px;
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: var(--mp-muted);
+}
+
+/* Controls row */
+.ai-controls{
+  margin-top: var(--mp-controls-gap);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  justify-items: center; align-items: center;
+}
+
+/* Buttons */
+.ai-btn{
+  position: relative;
+  display: block;
+  width: var(--mp-btn-center);
+  height: var(--mp-btn-center);
+  line-height: 0; overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--mp-border);
+  background: color-mix(in srgb, currentColor 6%, transparent); /* subtle tint of page color */
+  color: currentColor;
+  cursor: pointer;
+  transition: transform .08s ease, border-color .12s ease, background .12s ease;
+}
+.ai-btn:hover{ border-color: color-mix(in srgb, var(--mp-accent) 60%, transparent); }
+.ai-btn:active{ transform: translateY(1px) scale(.98); }
+.ai-btn.side{ width: var(--mp-btn-side); height: var(--mp-btn-side); }
+
+/* Single centering method */
+.ai-btn svg, .ai-btn img{
+  position: absolute;
+  inset: 0; margin: auto;
+  width: var(--mp-icon-center);
+  height: var(--mp-icon-center);
+  transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
+}
+.ai-btn.side svg, .ai-btn.side img{
+  width: var(--mp-icon-side);
+  height: var(--mp-icon-side);
+  transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
+}
+
+/* Custom icons via mask */
+:root{
+  --mp-icon: 18px;
+  --icon-play:  ;
+  --icon-pause: ;
+  --icon-back:  ;
+  --icon-fwd:   ;
+}
+html.custom-icons .ai-btn svg{ display:none; }
+html.custom-icons .ai-btn::before{
+  content:"";
+  position:absolute; inset:0; margin:auto;
+  width: var(--mp-icon-center); height: var(--mp-icon-center);
+  background-color: currentColor;
+  -webkit-mask-repeat:no-repeat; -webkit-mask-position:center; -webkit-mask-size:contain;
+          mask-repeat:no-repeat;         mask-position:center;         mask-size:contain;
+  transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
+}
+html.custom-icons .ai-btn.side::before{
+  width: var(--mp-icon-side); height: var(--mp-icon-side);
+  transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
+}
+html.custom-icons .ai-btn[data-icon="play"]::before  { -webkit-mask-image: var(--icon-play);  mask-image: var(--icon-play);  }
+html.custom-icons .ai-btn[data-icon="pause"]::before { -webkit-mask-image: var(--icon-pause); mask-image: var(--icon-pause); }
+html.custom-icons .ai-btn[data-icon="back"]::before  { -webkit-mask-image: var(--icon-back);  mask-image: var(--icon-back);  }
+html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(--icon-fwd);   mask-image: var(--icon-fwd);   }
+
+/* Footer / rate */
+.ai-footer{ margin-top: 6px; display:flex; align-items:flex-end; justify-content:flex-start; }
+.ai-rate{
+  -webkit-appearance: none; appearance: none;
+  background: transparent; border: 0; padding: 0;
+  font-size: 12px; line-height: 1; color: currentColor;
+}
+
+/* Mobile tweaks */
+@media (max-width: 420px){
+  .ai-card{ padding: 12px 12px 8px; }
+  .ai-title{ font-size: 14px; }
+  .ai-btn{ width: 40px; height: 40px; }
+  .ai-btn.primary{ width: 50px; height: 50px; }
+}
+
+/* Close (×): just a grey glyph, no box/border) */
 .ai-close{
   position:absolute; top:6px; left:6px;
   width:24px; height:24px;
   display:grid; place-items:center;
-  background: transparent !important;   /* no box */
-  border: none !important;              /* no border */
+  background: transparent !important;
+  border: none !important;
   box-shadow: none !important;
   outline: none !important;
-  color:#6b7280;                         /* grey glyph */
+  color:#6b7280;
   cursor:pointer;
 }
 .ai-close:after{ content:"×"; font-size:16px; font-weight:700; line-height:1; }
 
-/* Overlay used for click-outside to close */
+/* Overlay for click-outside to close */
 #ai-overlay{
   position:fixed; inset:0;
-  background: transparent;              /* invisible; change to rgba(0,0,0,.04) if you want a tint */
+  background: transparent;
   z-index: 999996;
   pointer-events:none; opacity:0; transition: opacity .12s ease;
 }
 #ai-overlay.show{ pointer-events:auto; opacity:1; }
 
-
-
-/* Style the Listen pill from the start; match page/mini-player background */
+/* Listen pill (matches page; keep readable border/shadow) */
 #ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
   position: fixed;
   right: 18px;
   bottom: calc(18px + env(safe-area-inset-bottom));
-  background: inherit !important;   /* use the page background immediately */
-  color: #000 !important;
-  border: none;
+  background: inherit !important;       /* <- match page background */
+  color: inherit !important;            /* <- match page text color */
+  border: 1px solid var(--mp-border);   /* subtle outline for any theme */
   border-radius: 999px;
   padding: 10px 16px;
   font-weight: 650;
@@ -268,21 +241,20 @@
   z-index: 999997;
 }
 
-/* Pre-hide: instant fade on press, but keep pointer events so the click goes through */
+/* Pre-hide (instant fade on press) */
 #ai-fab.prehide, .ai-fab.prehide, [data-ai-fab].prehide{
   opacity: 0;
   transform: translateY(20%);
-  /* NOTE: no pointer-events:none here — we *want* the click to fire */
 }
 
-/* Hidden state toggled by JS */
+/* Hidden (JS toggled) */
 #ai-fab.hide, .ai-fab.hide, [data-ai-fab].hide, button[aria-label="Listen"].hide{
   opacity: 0;
   transform: translateY(20%);
   pointer-events: none;
 }
 
-/* Auto-hide while mini is open: CSS safety net using :has() */
+/* Safety net: auto-hide FAB while mini is visible */
 body:has(#ai-mini.show) #ai-fab,
 body:has(#ai-mini.show) .ai-fab,
 body:has(#ai-mini.show) [data-ai-fab],
@@ -291,14 +263,3 @@ body:has(#ai-overlay.show) .ai-fab,
 body:has(#ai-overlay.show) [data-ai-fab]{
   display: none !important;
 }
-
-/* Auto-hide the Listen pill whenever the mini is visible (or overlay is up) */
-body:has(#ai-mini.show) #ai-fab,
-body:has(#ai-mini.show) .ai-fab,
-body:has(#ai-mini.show) [data-ai-fab],
-body:has(#ai-overlay.show) #ai-fab,
-body:has(#ai-overlay.show) .ai-fab,
-body:has(#ai-overlay.show) [data-ai-fab]{
-  display: none !important;
-}
-
