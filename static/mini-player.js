@@ -368,6 +368,11 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     audio.addEventListener('pause',      ()=>{ pos.save(); setPlayVisual(false); });
     audio.addEventListener('ratechange', ()=>{ pos.save(); });
 
+    // Kick an immediate render so numbers show instantly
+    tryUpdateTotal();
+    setProgress();
+
+
     // Play state
     audio.addEventListener('play',  ()=> setPlayVisual(true));
 
