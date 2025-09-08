@@ -656,31 +656,47 @@ async def api_tts(
     similarity: float = Query(0.9),
     style: float = Query(0.35),
     speaker_boost: bool = Query(True),
-    opt_latency: int = Query(0),  # safer default
+    opt_latency: int = Query(0),
 ):
     await require_tenant(request)
     rate_limit_check(request)
-    v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
+
+    v = (voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
     if not v:
-        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+        raise HTTPException(400, "Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
 
-    # keep request small & clean to avoid upstream 5xx
-    clean = preprocess_for_tts(body.text)[:600]
+    # Normalize and (optionally) cap for safety
+    clean = preprocess_for_tts(body.text or "")[:600]
 
-    key  = _cache_key(clean, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
-    path = os.path.join(CACHE_DIR, f"{key}.mp3")
+    key  = _cache_key(clean, v, (model or MODEL_ID), stability, similarity, style, speaker_boost, opt_latency)
+    outp = _mp3_path(key)
 
-    # on miss, synthesize then write to cache
-    if not os.path.exists(path) or os.path.getsize(path) == 0:
+    # If file exists & non-empty -> HIT
+    if outp.exists() and outp.stat().st_size > 0:
+        return {"audioUrl": public_url(f"/cache/{outp.name}"), "hit": True}
+
+    # MISS: debounce by key so duplicate clicks don't double-spend
+    lock = get_lock(key)
+    async with lock:
+        # re-check after awaiting
+        if outp.exists() and outp.stat().st_size > 0:
+            return {"audioUrl": public_url(f"/cache/{outp.name}"), "hit": True}
+
         try:
-            data = await tts_bytes(clean, v, model or MODEL_ID)
+            data = await tts_bytes(clean, v, (model or MODEL_ID))
         except Exception as e:
-            # show the *real* upstream error in our response so it's debuggable
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
-        with open(path, "wb") as f:
-            f.write(data)
 
-    return {"audioUrl": f"/cache/{key}.mp3"}
+        tmp = outp.with_suffix(".part")
+        tmp.write_bytes(data)
+        tmp.replace(outp)
+
+    return {"audioUrl": public_url(f"/cache/{outp.name}"), "hit": False}
+
+APP_URL = os.getenv("APP_URL","").rstrip("/")  # e.g., https://your-service.onrender.com
+def public_url(path: str) -> str:
+    return f"{APP_URL}{path}" if APP_URL else path
+
 
 def prepare_article(title: str, author: str, text: str) -> str:
     parts = []

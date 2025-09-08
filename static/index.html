@@ -54,6 +54,25 @@
       <button id="ai-listen-btn" class="listen-btn">Listen</button>
     </header>
 
+    <script>
+      const API_BASE = "https://<your-render>.onrender.com";  // put your backend URL here
+    
+      async function play(text) {
+        const res = await fetch(`${API_BASE}/api/tts`, {
+          method: "POST",
+          headers: { "content-type": "application/json" }
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const { audioUrl } = await res.json();
+    
+        const a = document.getElementById("player") || new Audio();
+        a.id = "player";
+        a.src = audioUrl;   // <- cached MP3
+        await a.play();
+      }
+    </script>
+
+
     <!-- Paste ONLY readable story text here: paragraphs, lists, blockquotes. -->
     <article id="demo-article" class="article-body">
       <p>Buried deep within millions of square miles of dense Amazon rainforest may lie tens of thousands of hidden archeological sites, where stone tools and rock paintings are testaments to civilizations that existed as far back as 13,000 years ago.</p>
