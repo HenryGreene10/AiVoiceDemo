@@ -1,0 +1,22 @@
+Where should archaeologists dig next? The winners of this OpenAI contest can tell them.
+Machine learning points to dozens of likely archaeological sites hidden across the Amazon rainforest.
+
+By National Geographic Staff
+Buried deep within millions of square miles of dense Amazon rainforest may lie tens of thousands of hidden archeological sites, where stone tools and rock paintings are testaments to civilizations that existed as far back as 13,000 years ago.
+
+But the thick forest sprawled across nine countries and home to hundreds of Indigenous groups today, is too vast and often difficult for archeologists to physically survey for hidden sites. Increasingly, researchers are looking to newer technologies like Artificial Intelligence and machine learning for help.
+
+That's why two archaeologists recently collaborated with OpenAI, the company behind ChatGPT, to judge a public competition encouraging tech enthusiasts to explore large troves of satellite images and remote sensor data for signs of undiscovered archeological sites.
+
+The winning three-person team of the "OpenAI to Z Challenge," announced Thursday, found 67 distinct patches across the Amazon, each measuring about a square mile, that they think could contain historically valuable ancient sites and provide potential starting points for field exploration. The judges included Egyptologist Sarah Parcak and Mesoamerican archaeologist Chris Fisher.
+
+The winning team, which calls itself “Black Bean,” trained deep learning models on several publicly available datasets, including remote sensing LiDAR data and satellite images from Google Earth Engine and NASA's digital elevation models, among others. The team says they then used OpenAI's GPT-4o model to learn the pattern of known archeological sites in the Amazon rainforest and compare them to unexplored swaths of the Amazon, mainly in Brazil. It then highlighted dozens of coordinates for future exploration.
+
+Many of the areas they identified appeared to be clustered along bodies of water. “Our results actually make sense on a common-sense level,” says Yao Zhao, a member of the winning team who is currently a software engineer at Meta, and was on a career break during the competition to learn more about AI applications. Ancient civilizations, after all, tended to flourish near accessible water sources. Being able to quickly churn through millions of square miles of geographic data within a few weeks could make it easier for archeologists to find patterns without relying on groundwork first, he adds. The first-place winners received a $250,000 cash prize and credits to use premium OpenAI products.
+
+Adding AI to the archaeologist's toolkit
+Machine learning isn't a completely new tool to explorers of the ancient world. Parcak, an archeologist at the University of Alabama at Birmingham, has used satellite images, thermal imaging and LiDAR, which employs planes or drones to emit pulses from sensors and observe their return, for a few decades in her exploration of Egypt, Tunisia and other countries.
+
+Those imaging tools and techniques, combined with machine learning trained to find patterns in data, have helped her uncover thousands of previously unknown settlements and tombs within known archeological sites. But newer AI models could build on those uses by looking beyond established archeological targets, turning up entirely new areas for archeologists to investigate, she says.
+
+Many sites are disappearing across the world as sea levels rise, vegetation spreads or recedes, and as humans build and migrate, abandoning or destroying valuable historical records.

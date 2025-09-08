@@ -30,11 +30,24 @@
 
     /* timebar numbers in black */
     #mp-elapsed, #mp-total { color:#000; }
-
   </style>
+
   <script>
     /* Enables the CSS mask-icon mode in mini-player.css */
     document.documentElement.classList.add('custom-icons');
+  </script>
+
+  <!-- ===== DEMO FLAGS (cost-safe). Toggle live with ?live=1 if you want. ===== -->
+  <script>
+    // Default: demo mode (no backend calls)
+    window.AIL_DISABLE_TTS = true;
+    window.AIL_AUDIO_URL   = "/audio/article-demo.mp3"; // make sure this exists
+
+    // Optional private live toggle: add ?live=1 to the URL to enable backend
+    try {
+      const qp = new URL(location.href).searchParams;
+      if (qp.get("live") === "1") window.AIL_DISABLE_TTS = false;
+    } catch {}
   </script>
 </head>
 
@@ -54,25 +67,6 @@
       <button id="ai-listen-btn" class="listen-btn">Listen</button>
     </header>
 
-    <script>
-      const API_BASE = "https://<your-render>.onrender.com";  // put your backend URL here
-    
-      async function play(text) {
-        const res = await fetch(`${API_BASE}/api/tts`, {
-          method: "POST",
-          headers: { "content-type": "application/json" }
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const { audioUrl } = await res.json();
-    
-        const a = document.getElementById("player") || new Audio();
-        a.id = "player";
-        a.src = audioUrl;   // <- cached MP3
-        await a.play();
-      }
-    </script>
-
-
     <!-- Paste ONLY readable story text here: paragraphs, lists, blockquotes. -->
     <article id="demo-article" class="article-body">
       <p>Buried deep within millions of square miles of dense Amazon rainforest may lie tens of thousands of hidden archeological sites, where stone tools and rock paintings are testaments to civilizations that existed as far back as 13,000 years ago.</p>
@@ -86,14 +80,49 @@
       <p>Machine learning isn't a completely new tool to explorers of the ancient world. Parcak, an archeologist at the University of Alabama at Birmingham, has used satellite images, thermal imaging and LiDAR, which employs planes or drones to emit pulses from sensors and observe their return, for a few decades in her exploration of Egypt, Tunisia and other countries.</p>
       <p>Those imaging tools and techniques, combined with machine learning trained to find patterns in data, have helped her uncover thousands of previously unknown settlements and tombs within known archeological sites. But newer AI models could build on those uses by looking beyond established archeological targets, turning up entirely new areas for archeologists to investigate, she says. </p>
       <p>Many sites are disappearing across the world as sea levels rise, vegetation spreads or recedes, and as humans build and migrate, abandoning or destroying valuable historical records.</p>
-      <!-- … add more paragraphs as needed … -->
     </article>
+
+    <!-- Baseline comparison (competitor stand-in): native HTML5 audio -->
+    <section style="margin-top:20px;padding-top:8px;border-top:1px solid #eee">
+      <h3>Baseline audio (HTML5 controls)</h3>
+      <audio controls preload="metadata" style="width:100%">
+        <source src="/audio/article-demo.mp3" type="audio/mpeg" />
+      </audio>
+      <small>For side-by-side UX comparison. This is static and cost-free.</small>
+    </section>
   </main>
+
+  <!-- ===== SIMPLE API helper (kept, but short-circuited for demo) ===== -->
+  <script>
+    const API_BASE = "https://aivoicedemo.onrender.com"; // your backend (only used when live)
+
+    async function playViaApi() {
+      const a = document.getElementById("player") || new Audio();
+      a.id = "player";
+
+      // DEMO SHORT-CIRCUIT
+      if (window.AIL_DISABLE_TTS && window.AIL_AUDIO_URL) {
+        a.src = window.AIL_AUDIO_URL;
+        await a.play().catch(()=>{});
+        return;
+      }
+
+      // Live path (only when ?live=1)
+      const res = await fetch(`${API_BASE}/api/tts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" }
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { audioUrl } = await res.json();
+      a.src = audioUrl;
+      await a.play().catch(()=>{});
+    }
+  </script>
 
   <!-- ===== HOTFIX: mini loader + full-article narration + trunc title + number prosody ===== -->
   <script>
   (function(){
-    const BASE   = "https://aivoicedemo.onrender.com";
+    const BASE   = "https://aivoicedemo.onrender.com"; // backend base (only when live)
     const VOICE  = "21m00Tcm4TlvDq8ikWAM";
     const TENANT = "demo123";
     const SEL    = "#demo-article";
@@ -156,7 +185,6 @@
       body = body.replace(/^\s*By\s+.+?(\.\s+|\n{1,}|  +)/i,"");
 
       const plain = [title, dek, by?`By ${by}`:"", body].filter(Boolean).join("\n\n");
-      console.log("[AIL] sending chars:", plain.length);
       return { title, dek, by, plain };
     }
 
@@ -175,7 +203,20 @@
         setTimeout(()=>{ const t=document.querySelector("#ai-mini .ai-title"); if (t) t.title = pageTitle; },0);
         window.AIL_bindTimebar && window.AIL_bindTimebar();
 
-        // request TTS with normalized numbers (add bust to dodge stale cache during dev)
+        // ===== DEMO SHORT-CIRCUIT: use static MP3, skip backend =====
+        if (window.AIL_DISABLE_TTS && window.AIL_AUDIO_URL) {
+          const a = window.AiMini.audio?.()
+                 || document.getElementById("ai-listen-audio")
+                 || (()=>{ const el=document.createElement("audio"); el.id="ai-listen-audio"; document.body.appendChild(el); return el; })();
+          try{ a.pause(); a.removeAttribute("src"); a.currentTime=0; }catch{}
+          a.src = window.AIL_AUDIO_URL;
+          a.preload = "auto";
+          a.addEventListener("canplay", ()=>a.play().catch(()=>{}), { once:true });
+          a.load();
+          return; // <-- no network, cost $0
+        }
+
+        // ===== LIVE PATH (only when ?live=1) =====
         const spoken = normalizeNumbers(plain);
         const r = await fetch(BASE + "/api/tts", {
           method:"POST",
@@ -296,13 +337,19 @@
   })();
   </script>
 
-  <!-- ===== Your widget (kept; safe alongside the hotfix) ===== -->
-  <script async
-       src="/tts-widget.v1.js?v=108"
-       data-base="https://aivoicedemo.onrender.com"
-       data-voice="21m00Tcm4TlvDq8ikWAM"
-       data-tenant="demo123"
-       data-selector="#demo-article">
+  <!-- ===== Conditional widget loader: only inject when NOT in demo ===== -->
+  <script>
+    (function(){
+      if (window.AIL_DISABLE_TTS) return; // demo mode: skip widget (no backend)
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = "/tts-widget.v1.js?v=108";
+      s.setAttribute('data-base',    'https://aivoicedemo.onrender.com');
+      s.setAttribute('data-voice',   '21m00Tcm4TlvDq8ikWAM');
+      s.setAttribute('data-tenant',  'demo123');
+      s.setAttribute('data-selector','#demo-article');
+      document.body.appendChild(s);
+    })();
   </script>
 </body>
 </html>
