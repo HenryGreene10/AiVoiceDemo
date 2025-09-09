@@ -94,7 +94,7 @@ from pathlib import Path
 CACHE_DIR = Path(os.getenv("CACHE_DIR","cache"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
-MAX_CHARS = 16000000  # ~90 seconds
+MAX_CHARS = 1600  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
