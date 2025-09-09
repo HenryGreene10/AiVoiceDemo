@@ -1,28 +1,43 @@
-# save as scripts/generate_mp3.py
-import os, json, requests, sys
+import os, sys, json, argparse, requests, pathlib
 
-API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel (example)
-MODEL_ID = "eleven_multilingual_v2"
+def main():
+    ap = argparse.ArgumentParser(description="One-shot TTS to MP3 (ElevenLabs)")
+    ap.add_argument("-i", "--input",  default="demo-article.txt", help="Text file to read")
+    ap.add_argument("-o", "--output", default="article-demo.mp3", help="Output MP3 path (e.g., ./article-demo.mp3 or public/audio/article-demo.mp3)")
+    ap.add_argument("--voice", default="21m00Tcm4TlvDq8ikWAM", help="ElevenLabs voice id")
+    ap.add_argument("--model", default="eleven_multilingual_v2", help="ElevenLabs model id")
+    args = ap.parse_args()
 
-text_path = sys.argv[1] if len(sys.argv) > 1 else "demo.txt"
-with open(text_path, "r", encoding="utf-8") as f:
-    text = f.read()
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        sys.exit("ERROR: ELEVENLABS_API_KEY not set")
 
-out_path = "/cygwin/home/henry/first100kproject/demo.mp3"
-os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    # read text
+    try:
+        text = pathlib.Path(args.input).read_text(encoding="utf-8")
+    except Exception as e:
+        sys.exit(f"ERROR: cannot read input file {args.input}: {e}")
 
-url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-headers = {"xi-api-key": API_KEY}
-payload = {
-    "text": text,
-    "model_id": MODEL_ID,
-    "voice_settings": {"stability": 0.4, "similarity_boost": 0.8}
-}
+    # ensure output dir exists
+    out_path = pathlib.Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-r = requests.post(url, headers=headers, json=payload)
-r.raise_for_status()
-with open(out_path, "wb") as f:
-    f.write(r.content)
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{args.voice}"
+    payload = {
+        "text": text,
+        "model_id": args.model,
+        "voice_settings": {"stability": 0.4, "similarity_boost": 0.8}
+    }
+    headers = {"xi-api-key": api_key, "Content-Type": "application/json"}
 
-print(f"Saved -> {out_path}")
+    print(f"[TTS] generating -> {out_path} ...")
+    r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=180)
+    if not r.ok:
+        msg = r.text[:500]
+        sys.exit(f"ERROR: TTS {r.status_code}: {msg}")
+
+    out_path.write_bytes(r.content)
+    print(f"[OK] saved: {out_path.resolve()}  ({len(r.content)//1024} KB)")
+
+if __name__ == "__main__":
+    main()
