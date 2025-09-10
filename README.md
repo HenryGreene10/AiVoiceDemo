@@ -1,15 +1,5 @@
-# AI Voice Demo
-Listen Lambda (SAM + FastAPI)
+# AI Listen — Text-to-Speech Micro-SaaS (FastAPI + ElevenLabs)
 
-Setup
-- Create secret for ElevenLabs API key:
-  aws secretsmanager create-secret --name ELEVENLABS_API_KEY --secret-string 'YOUR_KEY'
+Embeddable “Listen” button and mini-player for news, blogs, and e-learning.
 
-Deploy
-- sam build && sam deploy --guided
-
-Health check
-- curl "$API_URL/health"
-
-Update origins
-- sam deploy --parameter-overrides ALLOWED_ORIGINS="https://localhost,https://your-site.com"
+**Demo Here: https://ai-voice-demo-theta.vercel.app/ **
