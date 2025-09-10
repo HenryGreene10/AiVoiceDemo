@@ -345,8 +345,8 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
     /* wire controls */
     play.onclick = ()=> audio.paused ? audio.play().catch(()=>{}) : audio.pause();
-    back.onclick = ()=> { audio.currentTime = Math.max(0, (audio.currentTime||0) - 10); setProgress(); };
-    fwd.onclick  = ()=> { const d = audio.duration||1e9; audio.currentTime = Math.min(d, (audio.currentTime||0) + 10); setProgress(); };
+    back.onclick = ()=> { audio.currentTime = Math.max(0, (audio.currentTime||0) - 30); setProgress(); };
+    fwd.onclick  = ()=> { const d = audio.duration||1e9; audio.currentTime = Math.min(d, (audio.currentTime||0) + 30); setProgress(); };
     rate.onchange= ()=> { audio.playbackRate = parseFloat(rate.value)||1; };
     seek.oninput = ()=> {
       const d = audio.duration||0;
