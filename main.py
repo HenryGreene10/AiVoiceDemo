@@ -94,7 +94,7 @@ from pathlib import Path
 CACHE_DIR = Path(os.getenv("CACHE_DIR","cache"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
-MAX_CHARS = 1600  # ~90 seconds
+MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
@@ -646,6 +646,8 @@ def tts_post(
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
     return stream_with_cache(body.text, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
 
+from src.prosody import prepare_article
+
 @app.post("/api/tts")
 async def api_tts(
     request: Request,
@@ -666,7 +668,8 @@ async def api_tts(
         raise HTTPException(400, "Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
 
     # Normalize and (optionally) cap for safety
-    clean = preprocess_for_tts(body.text or "")[:600]
+    narrated = prepare_article("", "", body.text or "")
+    clean    = preprocess_for_tts(narrated)[:MAX_CHARS]
 
     key  = _cache_key(clean, v, (model or MODEL_ID), stability, similarity, style, speaker_boost, opt_latency)
     outp = _mp3_path(key)

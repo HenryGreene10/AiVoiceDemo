@@ -2,6 +2,8 @@ Where should archaeologists dig next? The winners of this OpenAI contest can tel
 Machine learning points to dozens of likely archaeological sites hidden across the Amazon rainforest.
 
 By National Geographic Staff
+
+
 Buried deep within millions of square miles of dense Amazon rainforest may lie tens of thousands of hidden archeological sites, where stone tools and rock paintings are testaments to civilizations that existed as far back as 13,000 years ago.
 
 But the thick forest sprawled across nine countries and home to hundreds of Indigenous groups today, is too vast and often difficult for archeologists to physically survey for hidden sites. Increasingly, researchers are looking to newer technologies like Artificial Intelligence and machine learning for help.
