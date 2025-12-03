@@ -203,12 +203,16 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
       throw new Error(`TTS ${r.status}: ${raw}`);
     }
     const data = await r.json();
-    const url =
+    let url =
       data.audioUrl ||
       data.url ||
       data.audio_url ||
       data.audio_url_signed ||
       null;
+    // If backend returns a relative path, resolve against configured API base
+    if (url && !/^https?:\/\//i.test(url) && url.startsWith("/")) {
+      url = configBase + url;
+    }
     if (!url) {
       throw new Error("No audio URL field found in payload");
     }
