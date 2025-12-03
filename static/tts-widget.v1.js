@@ -8,15 +8,19 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
   const $ = (s, r = document) => r.querySelector(s);
 
-  const scriptEl =
-    document.currentScript ||
-    document.querySelector('script[data-ail-tenant]') ||
-    document.querySelector('script[src*="tts-widget"]');
+  function findScriptEl() {
+    return (
+      document.currentScript ||
+      document.querySelector('script[data-ail-tenant]') ||
+      document.querySelector('script[src*="tts-widget"]')
+    );
+  }
+
+  const scriptEl = findScriptEl();
   const scriptData = (scriptEl && scriptEl.dataset) || {};
-  const apiBase =
-    scriptData.ailApiBase ||
-    (scriptEl ? new URL(scriptEl.src, window.location.href).origin : window.location.origin);
-  const tenant = scriptData.ailTenant || "";
+  const apiBase = scriptData.ailApiBase || window.location.origin;
+  const tenant = scriptData.ailTenant || "default";
+  const AIL_CONFIG = { apiBase, tenant };
 
   // --- meta helpers ---
   function pickMeta(arr) {
@@ -160,8 +164,18 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   // --- ensure mini-player code ---
+  function ensureMiniStyles(scriptSrc) {
+    if (document.querySelector('link[data-ail-mini-css]')) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = new URL("mini-player.css", scriptSrc).toString() + "?v=21";
+    link.dataset.ailMiniCss = "1";
+    document.head.appendChild(link);
+  }
+
   async function ensureMiniLoaded(scriptSrc) {
     if (window.AiMini) return;
+    ensureMiniStyles(scriptSrc);
     await new Promise((resolve, reject) => {
       const s = document.createElement("script");
       s.src = new URL("mini-player.js", scriptSrc).toString() + "?v=24";
@@ -172,12 +186,14 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   // --- API call ---
-  async function articleAudioUrl(apiBase, tenant, payload) {
-    const headers = { "content-type": "application/json" };
-    if (tenant) headers["x-tenant-key"] = tenant;
-    const base = (apiBase || window.location.origin).replace(/\/+$/, "");
+  async function articleAudioUrl(payload, cfg = AIL_CONFIG) {
+    const configBase = (cfg.apiBase || window.location.origin).replace(/\/+$/, "");
+    const headers = {
+      "content-type": "application/json",
+      "x-tenant-key": cfg.tenant
+    };
 
-    const r = await fetch(base + "/api/article-audio", {
+    const r = await fetch(`${configBase}/api/article-audio`, {
       method: "POST",
       headers,
       body: JSON.stringify(payload)
@@ -240,82 +256,110 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   window.AiListen = {
     init(opts = {}) {
       const ds = scriptData;
-      const effectiveApiBase = (opts.apiBase || ds.ailApiBase || apiBase || window.location.origin).trim();
-      const effectiveTenant = opts.tenant || ds.ailTenant || tenant || "";
+      const effectiveApiBase = (opts.apiBase || ds.ailApiBase || AIL_CONFIG.apiBase || window.location.origin).toString().trim();
+      const effectiveTenant = opts.tenant || ds.ailTenant || AIL_CONFIG.tenant || "default";
       const selector = opts.selector || ds.selector || "article";
       const labelIdle = opts.labelIdle || ds.labelIdle || "Listen";
       const className = opts.className || ds.class || "";
 
-      window._AIL_DEBUG = { base: effectiveApiBase, tenant: effectiveTenant };
+      const runtimeConfig = {
+        apiBase: effectiveApiBase.replace(/\/+$/, ""),
+        tenant: effectiveTenant
+      };
 
-      // Use existing inline button if present; otherwise create one
-      let btn = document.querySelector(".ail-listen");
-      if (!btn) {
-        btn = document.createElement("button");
-        btn.type = "button";
-        btn.classList.add("ail-listen");
-        const h1 = document.querySelector("h1");
-        if (h1) {
-          h1.insertAdjacentElement("afterend", btn);
-        } else {
-          (document.querySelector(selector) || document.body).prepend(btn);
-        }
+      window._AIL_DEBUG = { base: runtimeConfig.apiBase, tenant: runtimeConfig.tenant };
+
+      function attachListenHandler(btn) {
+        if (btn.__ailBound) return;
+        btn.__ailBound = true;
+
+        btn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          console.log("[AIL] Listen click");
+
+          try {
+            const srcBase = (scriptEl && scriptEl.src) || location.href;
+            await ensureMiniLoaded(srcBase);
+
+            const { plain, title, subtitle } = buildNarration(selector);
+            const spoken = normalizeNumbers(plain);
+            const pageTitle = title || document.querySelector("h1")?.innerText?.trim() || document.title || "AI Listen";
+            const subtitleText = subtitle || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
+            const pageUrl = window.location.href;
+
+            const payload = {
+              url: pageUrl,
+              title: pageTitle,
+              text: spoken
+            };
+
+            const url = await articleAudioUrl(payload, runtimeConfig);
+
+            console.log("[AIL] Listen mini-player play");
+            if (!window.AiMini?.open) {
+              throw new Error("Mini-player unavailable");
+            }
+            window.AiMini.open({
+              url,
+              title: pageTitle,
+              subtitle: subtitleText,
+              href: pageUrl
+            });
+
+            // ensure timebar labels bind after mini is open
+            try { window.AIL_bindTimebar && window.AIL_bindTimebar(); } catch {}
+          } catch (e) {
+            console.error("[AIL] Listen click failed:", e);
+            try {
+              window.AiMini?.error?.("Playback error");
+            } catch {}
+          }
+        });
       }
 
-      btn.id ||= "ai-listen-btn";
-      btn.textContent = labelIdle;
-      btn.classList.add("listen-btn", "ail-listen");
-      btn.removeAttribute("style");
-      if (className) btn.classList.add(className);
-
-      // Click: toggle mini; if opening, fetch & play from 0:00
-      btn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        console.log("[AIL] Listen click");
-
-        try {
-          const srcBase = (scriptEl && scriptEl.src) || location.href;
-          await ensureMiniLoaded(srcBase);
-
-          const { plain, title, subtitle } = buildNarration(selector);
-          const spoken = normalizeNumbers(plain);
-          const payload = {
-            text: spoken,
-            href: window.location.href
-          };
-          const url = await articleAudioUrl(effectiveApiBase, effectiveTenant, payload);
-
-          const pageTitle = title || document.querySelector("h1")?.innerText?.trim() || document.title || "AI Listen";
-          const subtitleText = subtitle || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
-          const pageUrl = window.location.href;
-
-          console.log("[AIL] Listen mini-player play");
-          if (!window.AiMini?.open) {
-            throw new Error("Mini-player unavailable");
-          }
-          window.AiMini.open({
-            url,
-            title: pageTitle,
-            subtitle: subtitleText,
-            href: pageUrl
-          });
-
-          // ensure timebar labels bind after mini is open
-          try { window.AIL_bindTimebar && window.AIL_bindTimebar(); } catch {}
-        } catch (e) {
-          console.error("[AIL] Listen click failed:", e);
-          try {
-            window.AiMini?.error?.("Playback error");
-          } catch {}
+      function initListenButton() {
+        // 1) If a .ail-listen already exists, just wire it up.
+        let btn = document.querySelector(".ail-listen");
+        if (btn) {
+          btn.id ||= "ai-listen-btn";
+          btn.classList.add("listen-btn", "ail-listen");
+          if (className) btn.classList.add(className);
+          if (!btn.textContent?.trim()) btn.textContent = labelIdle;
+          attachListenHandler(btn);
+          return;
         }
-      });
+
+        // 2) Otherwise, auto-inject under the first <h1>.
+        const h1 = document.querySelector("h1");
+        if (!h1) return;
+
+        btn = document.createElement("button");
+        btn.className = "ail-listen";
+        btn.type = "button";
+        btn.textContent = labelIdle;
+        btn.id = "ai-listen-btn";
+        btn.classList.add("listen-btn");
+        if (className) btn.classList.add(className);
+
+        h1.insertAdjacentElement("afterend", btn);
+        attachListenHandler(btn);
+      }
+
+      initListenButton();
     }
   };
 
-  // Auto-init
-  try {
-    window.AiListen.init();
-  } catch (e) {
-    console.error("[AIL] init error", e);
+  // Auto-init once DOM is ready
+  const runInit = () => {
+    try {
+      window.AiListen.init();
+    } catch (e) {
+      console.error("[AIL] init error", e);
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runInit, { once: true });
+  } else {
+    runInit();
   }
 })();

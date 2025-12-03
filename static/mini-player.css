@@ -364,4 +364,9 @@ html.ai-mini-open main{
 }
 
 
+/* Hide track title in the mini player for a cleaner look */
+.ai-mini-root .ai-title {
+  display: none !important;
+}
+
  
