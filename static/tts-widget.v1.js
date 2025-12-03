@@ -188,16 +188,16 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   // --- API call ---
-  async function getAudioUrl(apiBase, tenant, voiceId, text, preset) {
+  async function getAudioUrl(apiBase, tenant, voiceId, text) {
     const headers = { "content-type": "application/json" };
     if (tenant) headers["x-tenant-key"] = tenant;
 
     const payload = {
+      url: window.location.href,
       text,
       voice_id: voiceId || undefined,
-      preset: preset || undefined
     };
-    const r = await fetch(apiBase + "/api/tts", {
+    const r = await fetch(apiBase + "/api/article-audio", {
       method: "POST",
       headers,
       body: JSON.stringify(payload)
@@ -205,9 +205,9 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     const raw = await r.text();
     if (!r.ok) throw new Error(`TTS ${r.status}: ${raw}`);
     const j = JSON.parse(raw);
-    let url = j.audioUrl || j.audio_url || j.url;
+    let url = j.audio_url || j.audioUrl || j.url;
     if (!url) throw new Error("No audioUrl returned");
-    if (!/^https?:\/\//i.test(url)) url = apiBase + url;
+    if (!/^https?:\/\//i.test(url)) url = apiBase.replace(/\/+$/,'') + url;
     return url;
   }
   
@@ -317,7 +317,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
           const { plain, title, subtitle, author } = buildNarration(selector);
           const spoken = normalizeNumbers(plain);           
-          const url = await getAudioUrl(apiBase, tenant, voiceId, spoken, preset);
+          const url = await getAudioUrl(apiBase, tenant, voiceId, spoken);
 
           const a = window.AiMini.audio?.() || audioEl;
           try {

@@ -1035,6 +1035,48 @@ def _cache_key_simple(text: str, voice: str) -> str:
 def _mp3_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.mp3"
 
+
+def article_hash(canonical_text: str) -> str:
+    return hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()[:32]
+
+
+def article_mp3_path(canonical_text: str) -> Path:
+    return CACHE_DIR / f"{article_hash(canonical_text)}.mp3"
+
+
+async def ensure_article_cached(canonical_text: str, voice_id: str | None = None) -> tuple[str, bool, str]:
+    """Ensure the canonical article text has a cached ElevenLabs MP3."""
+    clean = (canonical_text or "").strip()
+    if not clean:
+        raise HTTPException(status_code=422, detail="Empty article text")
+    clean = clean[:MAX_CHARS]
+    path = article_mp3_path(clean)
+    h = path.stem
+
+    if path.exists() and path.stat().st_size > 0:
+        print({"event": "article_cache_hit", "hash": h})
+        return f"/cache/{path.name}", True, h
+
+    voice = (voice_id or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
+    if not voice:
+        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+
+    lock = get_lock(h)
+    async with lock:
+        if path.exists() and path.stat().st_size > 0:
+            print({"event": "article_cache_hit", "hash": h})
+            return f"/cache/{path.name}", True, h
+        try:
+            data = await tts_bytes(clean, voice, MODEL_ID)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+
+        tmp = path.with_suffix(".part")
+        tmp.write_bytes(data)
+        tmp.replace(path)
+        print({"event": "article_cache_miss", "hash": h, "bytes": len(data)})
+        return f"/cache/{path.name}", False, h
+
 # Reuse your synth function used by /api/tts, e.g. synth_to_file(text, voice, out_path)
 async def elevenlabs_tts_to_file(text: str, voice: str, out_path: Path) -> str:
     """Synthesize text to speech and save to file, returns the URL path"""
@@ -1383,6 +1425,35 @@ def shape_text_for_tone(text: str, tone: str) -> tuple[str, dict]:
         settings = {"stability":0.35,"similarity_boost":0.9,"style":0.35,"use_speaker_boost":True}
     shaped = re.sub(r"\n{3,}", "\n\n", shaped)
     return shaped, settings
+
+# --- article audio cache API ---
+class ArticleAudioRequest(BaseModel):
+    url: str | None = None
+    text: str | None = None
+    voice_id: str | None = None
+
+class ArticleAudioResponse(BaseModel):
+    audio_url: str
+    cached: bool
+    hash: str
+
+# Manual test:
+# POST the same text twice → first call MISS, second HIT, same audio_url/hash.
+@app.post("/api/article-audio", response_model=ArticleAudioResponse)
+async def article_audio(req: ArticleAudioRequest):
+    raw_text = (req.text or "").strip()
+
+    if not raw_text and req.url:
+        title, author, text = extract_article(req.url)
+        cleaned = preprocess_for_tts(text or "")
+        raw_text = prepare_article(title, author, cleaned)
+
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Must provide url or text")
+
+    canonical = preprocess_for_tts(raw_text)
+    audio_url, was_cached, hash_value = await ensure_article_cached(canonical, req.voice_id)
+    return ArticleAudioResponse(audio_url=audio_url, cached=was_cached, hash=hash_value)
 
 # --- read
 class ReadRequest(BaseModel):
