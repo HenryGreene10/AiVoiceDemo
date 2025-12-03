@@ -168,7 +168,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     if (document.querySelector('link[data-ail-mini-css]')) return;
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = new URL("mini-player.css", scriptSrc).toString() + "?v=21";
+    link.href = new URL("mini-player.css", scriptSrc).toString() + "?v=26";
     link.dataset.ailMiniCss = "1";
     document.head.appendChild(link);
   }
