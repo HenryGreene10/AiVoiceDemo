@@ -87,6 +87,8 @@
     var s = document.createElement("script");
     s.defer = true;
     s.src = "http://localhost:8000/static/tts-widget.v1.js?v=108";
+    // Tell the widget to call my FastAPI backend instead of window.location.origin
+    s.setAttribute("data-ail-api-base", "http://localhost:8000");
     s.setAttribute("data-ail-tenant", "demo");
     document.body.appendChild(s);
   })();
