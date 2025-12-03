@@ -186,37 +186,44 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   // --- API call ---
-  async function articleAudioUrl(payload, cfg = AIL_CONFIG) {
-    const configBase = (cfg.apiBase || window.location.origin).replace(/\/+$/, "");
-    const headers = {
-      "content-type": "application/json",
-      "x-tenant-key": cfg.tenant
-    };
+  async function articleAudioUrl(payload) {
+    // Base URL for the backend, from config or fallback to window location
+    const apiBase = (AIL_CONFIG && AIL_CONFIG.apiBase) || window.location.origin;
+    const baseNoSlash = apiBase.replace(/\/+$/, "");
 
-    const r = await fetch(`${configBase}/api/article-audio`, {
+    const resp = await fetch(baseNoSlash + "/api/article-audio", {
       method: "POST",
-      headers,
-      body: JSON.stringify(payload)
+      headers: {
+        "content-type": "application/json",
+        "x-tenant-key": AIL_CONFIG && AIL_CONFIG.tenant ? AIL_CONFIG.tenant : "default",
+      },
+      body: JSON.stringify(payload || {}),
     });
-    if (!r.ok) {
-      const raw = await r.text().catch(() => "");
-      throw new Error(`TTS ${r.status}: ${raw}`);
+
+    const data = await resp.json();
+    if (!resp.ok) {
+      const msg =
+        data && (data.detail || data.error || data.message) ||
+        `The page could not be found`;
+      throw new Error(`TTS ${resp.status}: ${msg}`);
     }
-    const data = await r.json();
-    let url =
-      data.audioUrl ||
-      data.url ||
-      data.audio_url ||
-      data.audio_url_signed ||
-      null;
-    // If backend returns a relative path, resolve against configured API base
-    if (url && !/^https?:\/\//i.test(url) && url.startsWith("/")) {
-      url = configBase + url;
-    }
+
+    // Prefer audio_url/audioUrl/url from the JSON
+    let url = data.audio_url || data.audioUrl || data.url;
     if (!url) {
-      throw new Error("No audio URL field found in payload");
+      throw new Error("TTS: no audio URL in response");
     }
-    return url;
+
+    // If URL is relative ("/cache/…"), resolve it against apiBase
+    if (!/^https?:\/\//i.test(url)) {
+      url = new URL(url, baseNoSlash + "/").href;
+    }
+
+    return {
+      url,
+      cached: !!data.cached,
+      hash: data.hash || null,
+    };
   }
   
   function numberToWordsUS(num){ // supports 0..999,999,999
@@ -297,7 +304,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
               text: spoken
             };
 
-            const url = await articleAudioUrl(payload, runtimeConfig);
+          const { url } = await articleAudioUrl(payload, runtimeConfig);
 
             console.log("[AIL] Listen mini-player play");
             if (!window.AiMini?.open) {
