@@ -9,8 +9,8 @@
   <meta name="author" content="National Geographic Staff" />
 
   <!-- Player styles (served from FastAPI /static) -->
-  <link rel="stylesheet" href="/static/mini-player.css?v=108" />
-  <link rel="stylesheet" href="/static/pro-player.css?v=108" />
+  <link rel="stylesheet" href="http://localhost:8000/static/mini-player.css?v=108" />
+  <link rel="stylesheet" href="http://localhost:8000/static/pro-player.css?v=108" />
 
   <!-- ===== Page look + icon variables for mini-player (optional) ===== -->
   <style>
@@ -286,23 +286,16 @@
   })();
   </script>
 
-  <!-- ===== Conditional widget loader: only inject when NOT in demo ===== -->
+    <!-- AI Listen widget (production) -->
   <script>
-(function () {
-  if (window.AIL_DISABLE_TTS) return; // demo mode: skip widget (no backend)
-
-  var s = document.createElement("script");
-  s.async = true;
-  s.src = "/static/tts-widget.v1.js?v=108";   // NOTE: /static/ path
-
-  // You can leave these for now; we'll clean them up when we do the data-* config:
-  s.setAttribute("data-base", "http://localhost:8000"); // or your backend URL
-  s.setAttribute("data-voice", "21m00Tcm4TlvDq8ikWAM");
-  s.setAttribute("data-tenant", "demo123");
-  s.setAttribute("data-selector", "#demo-article");
-
-  document.body.appendChild(s);
-})();
+  (function () {
+    var s = document.createElement("script");
+    s.defer = true;
+    s.src = "http://localhost:8000/static/tts-widget.v1.js?v=108";
+    s.setAttribute("data-ail-tenant", "demo");
+    document.body.appendChild(s);
+  })();
   </script>
+
 </body>
 </html>
