@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="custom-icons">
 <head>
   <!-- ===== Page metadata (keep title for SEO; the reader uses <h1>) ===== -->
   <meta charset="utf-8" />
@@ -8,19 +8,19 @@
   <meta name="description" content="OpenAI contest winners used machine learning to predict new archaeological sites in the Amazon." />
   <meta name="author" content="National Geographic Staff" />
 
-  <!-- ===== Player styles (serve these from your root) ===== -->
-  <link rel="stylesheet" href="/mini-player.css?v=108" />
-  <link rel="stylesheet" href="/pro-player.css?v=108" />
+  <!-- Player styles (served from FastAPI /static) -->
+  <link rel="stylesheet" href="/static/mini-player.css?v=108" />
+  <link rel="stylesheet" href="/static/pro-player.css?v=108" />
 
   <!-- ===== Page look + icon variables for mini-player (optional) ===== -->
   <style>
     :root{
       /* custom icons for the mini-player (optional) */
       --mp-icon: 20px;
-      --icon-play:  url('/icons/my-play.svg');
-      --icon-pause: url('/icons/my-pause.svg');
-      --icon-back:  url('/icons/my-back.svg');
-      --icon-fwd:   url('/icons/my-fwd.svg');
+      --icon-play:  url('/static/icons/my-play.svg');
+      --icon-pause: url('/static/icons/my-pause.svg');
+      --icon-back:  url('/static/icons/my-back.svg');
+      --icon-fwd:   url('/static/icons/my-fwd.svg');
     }
     body{
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -82,45 +82,6 @@
       <p>Many sites are disappearing across the world as sea levels rise, vegetation spreads or recedes, and as humans build and migrate, abandoning or destroying valuable historical records.</p>
     </article>
 
-  <!-- ===== SIMPLE API helper (kept, but short-circuited for demo) ===== -->
-  <script>
-    const API_BASE = "https://aivoicedemo.onrender.com"; // your backend (only used when live)
-
-    async function playViaApi() {
-      const a = document.getElementById("player") || new Audio();
-      a.id = "player";
-
-      // DEMO SHORT-CIRCUIT
-      if (window.AIL_DISABLE_TTS && window.AIL_AUDIO_URL) {
-        a.src = window.AIL_AUDIO_URL;
-        await a.play().catch(()=>{});
-        return;
-      }
-
-      // Live path (only when ?live=1)
-      const res = await fetch(`${API_BASE}/api/tts`, {
-        method: "POST",
-        headers: { "content-type": "application/json" }
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { audioUrl } = await res.json();
-      a.src = audioUrl;
-      await a.play().catch(()=>{});
-    }
-  </script>
-
-  <!-- ===== HOTFIX: mini loader + full-article narration + trunc title + number prosody ===== -->
-  <script>
-  (function(){
-    const BASE   = "https://aivoicedemo.onrender.com"; // backend base (only when live)
-    const VOICE  = "21m00Tcm4TlvDq8ikWAM";
-    const TENANT = "demo123";
-    const SEL    = "#demo-article";
-
-    function firstWords(str, n=5){
-      const w=(str||"").trim().split(/\s+/);
-      return w.length<=n ? (str||"") : w.slice(0,n).join(" ") + "…";
-    }
     function numberToWordsUS(num){
       const ones=["zero","one","two","three","four","five","six","seven","eight","nine"];
       const teens=["ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
@@ -329,17 +290,21 @@
 
   <!-- ===== Conditional widget loader: only inject when NOT in demo ===== -->
   <script>
-    (function(){
-      if (window.AIL_DISABLE_TTS) return; // demo mode: skip widget (no backend)
-      var s = document.createElement('script');
-      s.async = true;
-      s.src = "/tts-widget.v1.js?v=108";
-      s.setAttribute('data-base',    'https://aivoicedemo.onrender.com');
-      s.setAttribute('data-voice',   '21m00Tcm4TlvDq8ikWAM');
-      s.setAttribute('data-tenant',  'demo123');
-      s.setAttribute('data-selector','#demo-article');
-      document.body.appendChild(s);
-    })();
+(function () {
+  if (window.AIL_DISABLE_TTS) return; // demo mode: skip widget (no backend)
+
+  var s = document.createElement("script");
+  s.async = true;
+  s.src = "/static/tts-widget.v1.js?v=108";   // NOTE: /static/ path
+
+  // You can leave these for now; we'll clean them up when we do the data-* config:
+  s.setAttribute("data-base", "http://localhost:8000"); // or your backend URL
+  s.setAttribute("data-voice", "21m00Tcm4TlvDq8ikWAM");
+  s.setAttribute("data-tenant", "demo123");
+  s.setAttribute("data-selector", "#demo-article");
+
+  document.body.appendChild(s);
+})();
   </script>
 </body>
 </html>

@@ -6,6 +6,7 @@ from dotenv import load_dotenv;
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse, HTMLResponse
 from typing import Optional
+from dataclasses import dataclass
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import Query, Body
@@ -98,6 +99,19 @@ MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
+
+@dataclass
+class TenantConfig:
+    voice_id: str
+    model_id: str | None = None
+
+DEFAULT_TENANT_VOICE = (VOICE_ID or os.getenv("ELEVENLABS_VOICE", "").strip() or "21m00Tcm4TlvDq8ikWAM")
+TENANTS: dict[str, TenantConfig] = {
+    "default": TenantConfig(voice_id=DEFAULT_TENANT_VOICE),
+    "demo-blog": TenantConfig(
+        voice_id=os.getenv("DEMO_BLOG_VOICE", DEFAULT_TENANT_VOICE)
+    ),
+}
 
 
 # --- app
@@ -1036,30 +1050,41 @@ def _mp3_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.mp3"
 
 
-def article_hash(canonical_text: str) -> str:
-    return hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()[:32]
+def article_hash(canonical_text: str, tenant_key: str) -> str:
+    base = f"{tenant_key}|{canonical_text}"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:32]
 
 
-def article_mp3_path(canonical_text: str) -> Path:
-    return CACHE_DIR / f"{article_hash(canonical_text)}.mp3"
+def article_mp3_path(canonical_text: str, tenant_key: str) -> Path:
+    return CACHE_DIR / f"{article_hash(canonical_text, tenant_key)}.mp3"
 
 
-async def ensure_article_cached(canonical_text: str, voice_id: str | None = None) -> tuple[str, bool, str]:
+async def ensure_article_cached(
+    canonical_text: str,
+    tenant_cfg: TenantConfig | None,
+    tenant_key: str,
+) -> tuple[str, bool, str]:
     """Ensure the canonical article text has a cached ElevenLabs MP3."""
     clean = (canonical_text or "").strip()
     if not clean:
         raise HTTPException(status_code=422, detail="Empty article text")
     clean = clean[:MAX_CHARS]
-    path = article_mp3_path(clean)
+    path = article_mp3_path(clean, tenant_key)
     h = path.stem
 
     if path.exists() and path.stat().st_size > 0:
         print({"event": "article_cache_hit", "hash": h})
         return f"/cache/{path.name}", True, h
 
-    voice = (voice_id or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
+    voice = (
+        (tenant_cfg.voice_id if tenant_cfg else "")
+        or os.environ.get("ELEVENLABS_VOICE")
+        or os.environ.get("VOICE_ID")
+        or ""
+    ).strip()
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+    model = (tenant_cfg.model_id if tenant_cfg and tenant_cfg.model_id else MODEL_ID).strip()
 
     lock = get_lock(h)
     async with lock:
@@ -1067,7 +1092,7 @@ async def ensure_article_cached(canonical_text: str, voice_id: str | None = None
             print({"event": "article_cache_hit", "hash": h})
             return f"/cache/{path.name}", True, h
         try:
-            data = await tts_bytes(clean, voice, MODEL_ID)
+            data = await tts_bytes(clean, voice, model)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
@@ -1430,17 +1455,21 @@ def shape_text_for_tone(text: str, tone: str) -> tuple[str, dict]:
 class ArticleAudioRequest(BaseModel):
     url: str | None = None
     text: str | None = None
-    voice_id: str | None = None
+    href: str | None = None
 
 class ArticleAudioResponse(BaseModel):
     audio_url: str
     cached: bool
     hash: str
+    tenant: str
 
 # Manual test:
 # POST the same text twice → first call MISS, second HIT, same audio_url/hash.
 @app.post("/api/article-audio", response_model=ArticleAudioResponse)
-async def article_audio(req: ArticleAudioRequest):
+async def article_audio(req: ArticleAudioRequest, request: Request):
+    tenant_key = (request.headers.get("x-tenant-key") or "default").strip() or "default"
+    tenant_cfg = TENANTS.get(tenant_key) or TENANTS.get("default")
+
     raw_text = (req.text or "").strip()
 
     if not raw_text and req.url:
@@ -1452,8 +1481,8 @@ async def article_audio(req: ArticleAudioRequest):
         raise HTTPException(status_code=400, detail="Must provide url or text")
 
     canonical = preprocess_for_tts(raw_text)
-    audio_url, was_cached, hash_value = await ensure_article_cached(canonical, req.voice_id)
-    return ArticleAudioResponse(audio_url=audio_url, cached=was_cached, hash=hash_value)
+    audio_url, was_cached, hash_value = await ensure_article_cached(canonical, tenant_cfg, tenant_key)
+    return ArticleAudioResponse(audio_url=audio_url, cached=was_cached, hash=hash_value, tenant=tenant_key)
 
 # --- read
 class ReadRequest(BaseModel):

@@ -209,6 +209,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
     wrap = document.createElement('div');
     wrap.id = 'ai-mini';
+    wrap.classList.add('ai-mini-root');
 
     const card = document.createElement('div');
     card.className = 'ai-card';
@@ -294,8 +295,51 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     // Early restore attempt
     restorePosition(pos.load());
 
-    // meta
-    q('#mp-title').textContent = meta?.title || 'AI Listen';
+    // AI Listen: apply metadata + source when provided
+    const metaTitle = (meta?.title || 'AI Listen').trim() || 'AI Listen';
+    const metaSubtitle = (meta?.subtitle || '').trim();
+    const metaHref = meta?.href || '';
+    const metaUrl = typeof meta?.url === 'string' ? meta.url : '';
+
+    const titleEl = q('#mp-title');
+    if (titleEl) {
+      titleEl.textContent = metaTitle;
+      if (metaHref) {
+        titleEl.setAttribute('data-href', metaHref);
+      } else {
+        titleEl.removeAttribute('data-href');
+      }
+      titleEl.setAttribute('title', metaSubtitle || metaTitle);
+    }
+    wrap.dataset.ailSubtitle = metaSubtitle;
+    wrap.dataset.ailHref = metaHref;
+
+    if (metaUrl) {
+      const lastSrc = audio.dataset?.ailLastSrc || '';
+      if (lastSrc !== metaUrl) {
+        try { audio.pause(); } catch {}
+        try {
+          audio.removeAttribute('src');
+          audio.currentTime = 0;
+        } catch {}
+        audio.dataset.ailLastSrc = metaUrl;
+        audio.src = metaUrl;
+        audio.preload = 'auto';
+        audio.load();
+      }
+      const beginPlayback = () => {
+        audio.play().catch(() => {});
+      };
+      if (audio.readyState >= 2) {
+        beginPlayback();
+      } else {
+        const onReady = () => {
+          audio.removeEventListener('canplay', onReady);
+          beginPlayback();
+        };
+        audio.addEventListener('canplay', onReady, { once: true });
+      }
+    }
 
     const play = q('#mp-play'), back = q('#mp-back'), fwd = q('#mp-fwd');
     back.classList.add('side'); fwd.classList.add('side');
@@ -355,7 +399,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     };
 
     // ensure the browser loads timing info
-    audio.preload = 'metadata';
+    if (!meta?.url) audio.preload = 'metadata';
 
     // fire a few different hooks + a short polling fallback
     ['loadedmetadata','loadeddata','canplay','canplaythrough','durationchange']

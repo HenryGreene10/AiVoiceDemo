@@ -8,31 +8,15 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
   const $ = (s, r = document) => r.querySelector(s);
 
-  // --- script data (kept minimal) ---
-  function getScriptTag() {
-    return document.currentScript || $('script[src*="tts-widget"]');
-  }
-  function readDataset(script) {
-    const d = (script && script.dataset) || {};
-    return {
-      apiBase: (d.base || "").trim(),
-      voiceId: d.voice || "",
-      tenant: d.tenant || "",
-      selector: d.selector || "article",
-      preset: d.preset || "news",
-      ui: {
-        // we ONLY use labelIdle + optional className; no floating, no inline styles
-        labelIdle: d.labelIdle || "Listen",
-        className: d.class || ""
-      }
-    };
-  }
-  function normalizeBase(raw) {
-    let base = (raw || "").trim().replace(/\s+/g, "");
-    if (!/^https?:\/\//i.test(base)) base = location.origin;
-    base = base.replace(/^http:\/\//i, "https://").replace(/\/+$/g, "");
-    return base;
-  }
+  const scriptEl =
+    document.currentScript ||
+    document.querySelector('script[data-ail-tenant]') ||
+    document.querySelector('script[src*="tts-widget"]');
+  const scriptData = (scriptEl && scriptEl.dataset) || {};
+  const apiBase =
+    scriptData.ailApiBase ||
+    (scriptEl ? new URL(scriptEl.src, window.location.href).origin : window.location.origin);
+  const tenant = scriptData.ailTenant || "";
 
   // --- meta helpers ---
   function pickMeta(arr) {
@@ -188,26 +172,30 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   // --- API call ---
-  async function getAudioUrl(apiBase, tenant, voiceId, text) {
+  async function articleAudioUrl(apiBase, tenant, payload) {
     const headers = { "content-type": "application/json" };
     if (tenant) headers["x-tenant-key"] = tenant;
+    const base = (apiBase || window.location.origin).replace(/\/+$/, "");
 
-    const payload = {
-      url: window.location.href,
-      text,
-      voice_id: voiceId || undefined,
-    };
-    const r = await fetch(apiBase + "/api/article-audio", {
+    const r = await fetch(base + "/api/article-audio", {
       method: "POST",
       headers,
       body: JSON.stringify(payload)
     });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`TTS ${r.status}: ${raw}`);
-    const j = JSON.parse(raw);
-    let url = j.audio_url || j.audioUrl || j.url;
-    if (!url) throw new Error("No audioUrl returned");
-    if (!/^https?:\/\//i.test(url)) url = apiBase.replace(/\/+$/,'') + url;
+    if (!r.ok) {
+      const raw = await r.text().catch(() => "");
+      throw new Error(`TTS ${r.status}: ${raw}`);
+    }
+    const data = await r.json();
+    const url =
+      data.audioUrl ||
+      data.url ||
+      data.audio_url ||
+      data.audio_url_signed ||
+      null;
+    if (!url) {
+      throw new Error("No audio URL field found in payload");
+    }
     return url;
   }
   
@@ -251,96 +239,66 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   // --- public init ---
   window.AiListen = {
     init(opts = {}) {
-      const script = getScriptTag();
-      const ds = readDataset(script);
+      const ds = scriptData;
+      const effectiveApiBase = (opts.apiBase || ds.ailApiBase || apiBase || window.location.origin).trim();
+      const effectiveTenant = opts.tenant || ds.ailTenant || tenant || "";
+      const selector = opts.selector || ds.selector || "article";
+      const labelIdle = opts.labelIdle || ds.labelIdle || "Listen";
+      const className = opts.className || ds.class || "";
 
-      const apiBase = normalizeBase(opts.apiBase || ds.apiBase || location.origin);
-      const voiceId = opts.voiceId || ds.voiceId || "";
-      const tenant = opts.tenant || ds.tenant || "";
-      const preset = opts.preset || ds.preset || "news";
-      const selector = opts.selector || ds.selector;
-      const ui = Object.assign({}, ds.ui, opts.ui || {});
-
-      window._AIL_DEBUG = { base: apiBase, tenant, voiceId, preset };
+      window._AIL_DEBUG = { base: effectiveApiBase, tenant: effectiveTenant };
 
       // Use existing inline button if present; otherwise create one
-      let btn = $("#ai-listen-btn");
+      let btn = document.querySelector(".ail-listen");
       if (!btn) {
         btn = document.createElement("button");
-        btn.id = "ai-listen-btn";
         btn.type = "button";
-        btn.textContent = ui.labelIdle || "Listen";
-      } else {
-        btn.textContent = ui.labelIdle || "Listen";
+        btn.classList.add("ail-listen");
+        const h1 = document.querySelector("h1");
+        if (h1) {
+          h1.insertAdjacentElement("afterend", btn);
+        } else {
+          (document.querySelector(selector) || document.body).prepend(btn);
+        }
       }
 
-      // Always use your CSS pill, never inline styles; place under H1
-      if (ui.className) btn.classList.add(ui.className);
-      btn.classList.add("listen-btn");
+      btn.id ||= "ai-listen-btn";
+      btn.textContent = labelIdle;
+      btn.classList.add("listen-btn", "ail-listen");
       btn.removeAttribute("style");
-
-      const h1 = document.querySelector("h1");
-      if (h1 && (!btn.parentElement || btn.parentElement !== h1.parentElement)) {
-        h1.insertAdjacentElement("afterend", btn);
-      } else if (!btn.parentElement) {
-        (document.querySelector(selector) || document.body).prepend(btn);
-      }
-
-      // Singleton audio element (mini will reuse it)
-      let audioEl = $("#ai-listen-audio");
-      if (!audioEl) {
-        audioEl = document.createElement("audio");
-        audioEl.id = "ai-listen-audio";
-        audioEl.preload = "auto";
-        document.body.appendChild(audioEl);
-      }
+      if (className) btn.classList.add(className);
 
       // Click: toggle mini; if opening, fetch & play from 0:00
       btn.addEventListener("click", async (ev) => {
         ev.preventDefault();
-
-        // Toggle: if open → close & pause
-        if (window.AiMini?.isOpen?.()) {
-          try {
-            window.AiMini.close();
-          } catch {}
-          try {
-            audioEl.pause();
-          } catch {}
-          return;
-        }
+        console.log("[AIL] Listen click");
 
         try {
-          const srcBase =
-            (document.currentScript && document.currentScript.src) || location.href;
+          const srcBase = (scriptEl && scriptEl.src) || location.href;
           await ensureMiniLoaded(srcBase);
 
-          const { plain, title, subtitle, author } = buildNarration(selector);
-          const spoken = normalizeNumbers(plain);           
-          const url = await getAudioUrl(apiBase, tenant, voiceId, spoken);
+          const { plain, title, subtitle } = buildNarration(selector);
+          const spoken = normalizeNumbers(plain);
+          const payload = {
+            text: spoken,
+            href: window.location.href
+          };
+          const url = await articleAudioUrl(effectiveApiBase, effectiveTenant, payload);
 
-          const a = window.AiMini.audio?.() || audioEl;
-          try {
-            a.pause();
-            a.removeAttribute("src");
-            a.currentTime = 0;
-          } catch {}
+          const pageTitle = title || document.querySelector("h1")?.innerText?.trim() || document.title || "AI Listen";
+          const subtitleText = subtitle || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
+          const pageUrl = window.location.href;
 
-          a.src = url;
-          a.preload = "auto";
-
-          await new Promise((res) => {
-            const onReady = () => {
-              a.removeEventListener("canplay", onReady);
-              res();
-            };
-            a.addEventListener("canplay", onReady, { once: true });
-            a.load();
+          console.log("[AIL] Listen mini-player play");
+          if (!window.AiMini?.open) {
+            throw new Error("Mini-player unavailable");
+          }
+          window.AiMini.open({
+            url,
+            title: pageTitle,
+            subtitle: subtitleText,
+            href: pageUrl
           });
-
-          try {
-            await a.play();
-          } catch {}
 
           // ensure timebar labels bind after mini is open
           try { window.AIL_bindTimebar && window.AIL_bindTimebar(); } catch {}

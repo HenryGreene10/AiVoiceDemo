@@ -17,17 +17,43 @@
 }
 
 /* 3) Single mini-player placement (keep ONE copy only) */
-#ai-mini{
+.ai-mini-root{
   position: fixed;
   right: 18px;
   bottom: calc(18px + env(safe-area-inset-bottom));
+  width: min(420px, calc(100vw - 32px));
+  max-width: 420px;
   transform: translateY(120%) scale(.98);
   opacity: 0;
   transition: transform .18s ease, opacity .18s ease;
   z-index: 999998;
 }
-#ai-mini.show{ transform: translateY(0) scale(1); opacity:1; }
-#ai-mini.hidden{ pointer-events:none; }
+.ai-mini-root.show{ transform: translateY(0) scale(1); opacity:1; }
+.ai-mini-root.hidden{ pointer-events:none; }
+.ai-mini-root .ai-card{
+  width: 100%;
+  max-width: 100%;
+}
+
+@media (max-width: 639px){
+  .ai-mini-root{
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+  }
+  .ai-mini-root .ai-card{
+    border-radius: 16px;
+    padding: 12px 14px 10px;
+  }
+  .ai-mini-root .ai-title{
+    font-size: 14px;
+  }
+  .ai-mini-root .ai-timebar{
+    font-size: 11px;
+  }
+}
 
 /* 4) Listen button: inline pill under the title (not floating) */
 #ai-listen-btn, .listen-btn{
@@ -89,9 +115,9 @@
 .listen-btn:active{ transform: translateY(1px); }
 
 /* 5) DISABLE any global auto-hide rules for FAB while mini is open */
-body:has(#ai-mini.show) #ai-fab,
-body:has(#ai-mini.show) .ai-fab,
-body:has(#ai-mini.show) [data-ai-fab]{
+body:has(.ai-mini-root.show) #ai-fab,
+body:has(.ai-mini-root.show) .ai-fab,
+body:has(.ai-mini-root.show) [data-ai-fab]{
   display: inline-flex !important;   /* keep it visible */
 }
 
@@ -257,10 +283,10 @@ body:has(#ai-mini.show) [data-ai-fab]{
 /* Custom icons via mask */
 :root{
   --mp-icon: 18px;
-  --icon-play:  ;
-  --icon-pause: ;
-  --icon-back:  ;
-  --icon-fwd:   ;
+  --icon-play:  url('/static/icons/my-play.svg');
+  --icon-pause: url('/static/icons/my-pause.svg');
+  --icon-back:  url('/static/icons/my-back.svg');
+  --icon-fwd:   url('/static/icons/my-fwd.svg');
 }
 html.custom-icons .ai-btn svg{ display:none; }
 html.custom-icons .ai-btn::before{
@@ -320,24 +346,14 @@ html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(-
 }
 #ai-overlay.show{ pointer-events:auto; opacity:1; }
 
-/* Always sit above the iOS home bar */
-#ai-mini{
-  position: fixed;
-  right: 18px;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  z-index: 999998;
-}
-
-/* Mobile/tablet: center & span safely so it doesn’t overlap text */
-@media (max-width: 768px){
-  #ai-mini{
-    left: 12px;               /* center it */
-    right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom));
+@media (max-width: 640px){
+  .ai-mini-root .ai-controls{
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  #ai-mini .ai-card{
-    width: 100%;              /* fill the available width inside the margins */
-    max-width: 640px;         /* optional ceiling */
+  .ai-mini-root .ai-footer{
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 
