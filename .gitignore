@@ -31,3 +31,13 @@ metrics/streams.csv
 .env
 env.json
 '@ | Set-Content -Encoding UTF8 .gitignore
+
+
+
+# --- Node/Next frontend ---
+frontend/node_modules/
+frontend/.next/
+frontend/.turbo/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
