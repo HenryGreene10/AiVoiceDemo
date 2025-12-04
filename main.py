@@ -240,7 +240,13 @@ from fastapi.middleware.cors import CORSMiddleware
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS","").strip()
 ALLOWED = [o.strip() for o in ALLOW_ORIGINS.split(",") if o.strip()]
 if not ALLOWED:
-    ALLOWED = ["http://127.0.0.1:8000","http://localhost:8000"]
+    ALLOWED = [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://hgtts.onrender.com",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
