@@ -3,10 +3,7 @@ export default function Page() {
     <>
       <header className="ea-nav">
         <div className="ea-nav-inner">
-          <div className="ea-nav-left">
-            <div className="ea-logo-mark">🎧</div>
-            <div className="ea-logo-text">EasyAudio</div>
-          </div>
+          <span className="ea-nav-title">EasyAudio</span>
           <nav className="ea-nav-links">
             <a href="#demo" className="ea-nav-link">
               Demo
@@ -24,78 +21,53 @@ export default function Page() {
       <main className="ea-shell">
         {/* HERO */}
         <section className="ea-hero">
-          <div className="ea-hero-card">
-            <div className="ea-hero-corners">
-              <div className="ea-corner ea-corner--tl" />
-              <div className="ea-corner ea-corner--tr" />
-              <div className="ea-corner ea-corner--bl" />
-              <div className="ea-corner ea-corner--br" />
-            </div>
-
-            <div className="ea-badge">NEW • MICRO SAAS DEMO</div>
-
-            <h1 className="ea-hero-title">
-              Turn Any Article
-              <br />
-              Into Clean Audio
-            </h1>
-
-            <p className="ea-hero-subtitle">
-              EasyAudio adds a tiny floating player to your articles. One script tag, natural voice,
-              and server-side caching that keeps your TTS costs under control.
-            </p>
-
-            <div className="ea-hero-cta-row">
-              <a href="#demo" className="ea-btn">
-                ▶ Try the Live Demo
-              </a>
-              <a href="#pricing" className="ea-btn ea-btn--dark">
-                View Pricing
-              </a>
-            </div>
-
-            <div className="ea-hero-note">
-              Scroll down to see the demo article, then keep scrolling for pricing &amp; install.
-            </div>
+          <div className="ea-card ea-hero-card">
+            <h1 className="ea-hero-title">Turn Any Article Into a Clean Listening Experience</h1>
           </div>
         </section>
 
         {/* DEMO SECTION */}
         <section id="demo" className="ea-section">
-          <div className="ea-section-header">
-            <h2 className="ea-section-title">Live Demo Article</h2>
-            <p className="ea-section-subtitle">
-              This is the kind of page your readers would see. The EasyAudio widget will inject a
-              floating “Listen” button and mini-player on top of this content.
-            </p>
-          </div>
-
           <div className="ea-demo-article-wrap">
             <article className="ea-demo-article" id="ea-demo-article" data-ail-article>
-              <h2>Why EasyAudio Makes Your Content Easier to Finish</h2>
+              <header className="ea-article-header">
+                <h2>Why EasyAudio?</h2>
+                <p className="ea-article-meta">by Henry G.</p>
+                <button id="ail-listen-btn" className="ea-listen-button listen-btn">
+                  Listen
+                </button>
+              </header>
+
+              <h2>Give Every Article a Voice</h2>
               <p>
-                Most readers love your ideas, but real life gets in the way — notifications,
-                meetings, and ten open tabs. Audio gives them another path to finish what they
-                started.
+                EasyAudio is a lightweight widget that adds a Listen button and a calm mini player
+                to every story you choose. It turns your writing into a clear, natural listening
+                experience so readers can stay with your work even when they can&apos;t sit and read.
+              </p>
+
+              <h2>Help Readers Stay Connected With Your Work</h2>
+              <p>
+                EasyAudio gives your audience a high-quality audio version of your writing so they
+                can stay engaged in moments when reading is not convenient. A natural and expressive
+                voice helps your ideas land more clearly and encourages readers to finish more of
+                what you share.
               </p>
               <p>
-                EasyAudio turns this article into a clean, natural reading experience powered by AI.
-                Instead of copying text into another app, your visitors tap play and keep listening
-                while they switch tabs or put their phone in their pocket.
+                It enhances the overall experience of your content and helps people stay connected
+                to your work in a way that feels simple and intuitive.
+              </p>
+
+              <h2>Audio for Any Article You Choose</h2>
+              <p>
+                Whether you publish essays, newsletters, research notes or community updates,
+                EasyAudio adds a polished listening option right when the article goes live.
+                There is nothing extra for you to produce. You simply write, and your readers
+                can choose to listen.
               </p>
               <p>
-                The magic is that EasyAudio runs on your own backend. We request audio once, cache
-                it on disk, and every future listen is instant. That means lower TTS costs and a
-                faster experience for your readers.
-              </p>
-              <p>
-                Below this paragraph, the page is just normal HTML — headings, paragraphs, links.
-                The widget script finds the article content and wires up the mini-player
-                automatically.
-              </p>
-              <p>
-                Scroll a little further down for pricing ideas and an example install snippet you
-                could drop into any blog or CMS template.
+                Under the hood it is a small, lightweight widget. In practice it feels like an
+                extra path into your work: a natural voice, attached to any article you care about,
+                that quietly helps readers stay with you from start to finish.
               </p>
             </article>
           </div>
@@ -106,7 +78,7 @@ export default function Page() {
           <div className="ea-section-header">
             <h2 className="ea-section-title">Install in One Script Tag</h2>
             <p className="ea-section-subtitle">
-              Drop this at the bottom of your article template. The floating player does the rest.
+              Add EasyAudio to any article template with a simple three-line HTML embed.
             </p>
           </div>
 
@@ -125,12 +97,12 @@ export default function Page() {
               style={{
                 overflowX: "auto",
                 padding: "10px 12px",
-                background: "#212529",
-                color: "#f8f9fa",
-                border: "3px solid #212529",
+                background: "#1a1c1a",
+                color: "#f3dfc1",
+                border: "2px solid #e0c9a6",
                 fontSize: 12,
                 lineHeight: 1.5,
-                boxShadow: "3px 3px 0 #495057",
+                boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
               }}
             >{`<script
   src="https://hgtts.onrender.com/static/tts-widget.v1.js"
@@ -142,7 +114,7 @@ export default function Page() {
               style={{
                 fontSize: 13,
                 fontWeight: 700,
-                color: "#495057",
+                color: "#4b3f2f",
                 marginTop: 10,
               }}
             >
@@ -154,65 +126,67 @@ export default function Page() {
 
         {/* PRICING */}
         <section id="pricing" className="ea-section">
-          <div className="ea-section-header">
-            <h2 className="ea-section-title">Simple Pricing for a Simple Player</h2>
-            <p className="ea-section-subtitle">
-              These are example plans for EasyAudio. Adjust limits later based on your traffic and
-              TTS costs.
-            </p>
-          </div>
-
-          <div className="ea-pricing-row">
-            <div className="ea-plan">
-              <div className="ea-plan-name">Starter</div>
-              <div className="ea-plan-desc">For personal blogs &amp; small newsletters.</div>
-              <div className="ea-plan-price">
-                <span className="ea-plan-price-amount">$9</span>/month
-              </div>
-              <a href="#install" className="ea-plan-cta">
-                Get Early Access
-              </a>
-              <ul className="ea-plan-features">
-                <li>Up to 100 article renders / month</li>
-                <li>EasyAudio mini-player on one site</li>
-                <li>Server-side caching included</li>
-                <li>Email support</li>
-              </ul>
+          <div className="ea-pricing-shell">
+            <div className="ea-section-header">
+              <h2 className="ea-section-title">Simple Pricing for a Simple Player</h2>
+              <p className="ea-section-subtitle">
+                These are example plans for EasyAudio. Adjust limits later based on your traffic and
+                TTS costs.
+              </p>
             </div>
 
-            <div className="ea-plan ea-plan--highlight">
-              <div className="ea-plan-label">Most Popular</div>
-              <div className="ea-plan-name">Publisher</div>
-              <div className="ea-plan-desc">For growing Substacks &amp; content sites.</div>
-              <div className="ea-plan-price">
-                <span className="ea-plan-price-amount">$29</span>/month
+            <div className="ea-pricing-row">
+              <div className="ea-plan">
+                <div className="ea-plan-name ea-pricing-plan-title">Starter</div>
+                <div className="ea-plan-desc">For personal blogs &amp; small newsletters.</div>
+                <div className="ea-plan-price ea-pricing-price">
+                  <span className="ea-plan-price-amount">$9</span>/month
+                </div>
+                <a href="#install" className="ea-plan-cta">
+                  Get Early Access
+                </a>
+                <ul className="ea-plan-features">
+                  <li>Up to 100 article renders / month</li>
+                  <li>EasyAudio mini-player on one site</li>
+                  <li>Server-side caching included</li>
+                  <li>Email support</li>
+                </ul>
               </div>
-              <a href="#install" className="ea-plan-cta">
-                Get Early Access
-              </a>
-              <ul className="ea-plan-features">
-                <li>Up to 500 article renders / month</li>
-                <li>Mini-player on up to 3 sites</li>
-                <li>Priority support</li>
-                <li>Basic listener metrics</li>
-              </ul>
-            </div>
 
-            <div className="ea-plan">
-              <div className="ea-plan-name">Newsroom</div>
-              <div className="ea-plan-desc">For high-volume blogs &amp; local media.</div>
-              <div className="ea-plan-price">
-                <span className="ea-plan-price-amount">$99</span>/month
+              <div className="ea-plan ea-plan--highlight">
+                <div className="ea-plan-label">Most Popular</div>
+                <div className="ea-plan-name ea-pricing-plan-title">Publisher</div>
+                <div className="ea-plan-desc">For growing Substacks &amp; content sites.</div>
+                <div className="ea-plan-price ea-pricing-price">
+                  <span className="ea-plan-price-amount">$29</span>/month
+                </div>
+                <a href="#install" className="ea-plan-cta">
+                  Get Early Access
+                </a>
+                <ul className="ea-plan-features">
+                  <li>Up to 500 article renders / month</li>
+                  <li>Mini-player on up to 3 sites</li>
+                  <li>Priority support</li>
+                  <li>Basic listener metrics</li>
+                </ul>
               </div>
-              <a href="#install" className="ea-plan-cta">
-                Talk to Us
-              </a>
-              <ul className="ea-plan-features">
-                <li>Custom article limits</li>
-                <li>Multiple properties / sections</li>
-                <li>Slack/email support</li>
-                <li>Custom caching &amp; analytics options</li>
-              </ul>
+
+              <div className="ea-plan">
+                <div className="ea-plan-name ea-pricing-plan-title">Newsroom</div>
+                <div className="ea-plan-desc">For high-volume blogs &amp; local media.</div>
+                <div className="ea-plan-price ea-pricing-price">
+                  <span className="ea-plan-price-amount">$99</span>/month
+                </div>
+                <a href="#install" className="ea-plan-cta">
+                  Talk to Us
+                </a>
+                <ul className="ea-plan-features">
+                  <li>Custom article limits</li>
+                  <li>Multiple properties / sections</li>
+                  <li>Slack/email support</li>
+                  <li>Custom caching &amp; analytics options</li>
+                </ul>
+              </div>
             </div>
           </div>
         </section>
@@ -220,8 +194,7 @@ export default function Page() {
       </main>
 
       <footer className="ea-footer">
-        EasyAudio demo · Built to show how a tiny AI audio widget could feel in production.
-        <small>Backend: Python + ElevenLabs · Frontend: Next.js + one script tag.</small>
+        <small>© {new Date().getFullYear()} EasyAudio.</small>
       </footer>
     </>
   )

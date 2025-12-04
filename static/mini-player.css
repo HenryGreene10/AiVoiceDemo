@@ -1,6 +1,33 @@
 
 /* === AI Listen overrides (place at very end) === */
 
+:root{
+  --mp-font: "Courier New", monospace;
+  --mp-bg: #fffdf8;
+  --mp-fg: #1a1c1a;
+  --mp-muted: #6b5a46;
+  --mp-accent: #8d6b4f;
+  --mp-border: #e0c9a6;
+  --mp-radius: 16px;
+  --mp-shadow: 0 16px 40px rgba(0,0,0,.15);
+  --mp-gap-top: 16px;
+  --mp-gap-bottom: 0px;
+  --mp-controls-gap: 4px;
+  --mp-width: 820px;
+  --mp-btn-center: 56px;
+  --mp-btn-side: 42px;
+  --mp-icon-center: 30px;
+  --mp-icon-side: 56px;
+  --mp-track-h: 2px;
+  --mp-knob: 6px;
+  --mp-progress-bg: #e9d6bd;
+  --mp-progress-fill: #8d6b4f;
+  --mp-center-nudge-x: 0px;
+  --mp-center-nudge-y: 0px;
+  --mp-side-nudge-x: -6px;
+  --mp-side-nudge-y: 0px;
+}
+
 /* 1) Remove close (×) and reclaim space */
 .ai-close { display: none !important; }
 .ai-card { padding-top: 12px; }
@@ -31,6 +58,7 @@
   padding: 0;
   border-radius: 0;
   box-shadow: none;
+  font-family: var(--mp-font);
 }
 .ai-mini-root.show{ transform: translateY(0) scale(1); opacity:1; }
 .ai-mini-root.hidden{ pointer-events:none; }
@@ -62,20 +90,21 @@
 
 /* 4) Listen button: inline pill under the title (not floating) */
 #ai-listen-btn, .listen-btn{
-  position: static !important;       /* cancel any fixed/floating */
-  background: inherit !important;    /* match page bg */
-  color: inherit !important;
-  align-items: center; gap: 8px;       
-  border: 3px solid color-mix(in srgb, currentColor 33%, transparent);
+  position: static !important;
+  background: #fffdf8 !important;
+  color: #1a1c1a !important;
+  border: 2px solid #e0c9a6;
   border-radius: 9999px;
-  padding: 8px 14px;
+  padding: 8px 16px;
   font-weight: 650;
   line-height: 1;
-  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  box-shadow: 0 8px 18px rgba(0,0,0,.12);
   cursor: pointer;
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-#ai-listen-btn:hover{ filter: brightness(0.98); border-color: color-mix(in srgb, currentColor 55%, transparent); }
+#ai-listen-btn:hover{ filter: brightness(0.98); border-color: #d7b78d; }
 #ai-listen-btn:active{ transform: translateY(1px); }
 
 /* 5) Mobile niceties */
@@ -100,22 +129,20 @@
   margin-left: 12px;             /* spacing from author name */
 }
 
-/* Generic Listen button look that matches page */
 .listen-btn,
 #ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
-  position: static !important;        /* not fixed: lives in the header row */
-  background: inherit !important;     /* match page bg */
-  color: inherit !important;          /* match page text color */
-  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  position: static !important;
+  background: #fffdf8 !important;
+  color: #1a1c1a !important;
+  border: 2px solid #e0c9a6;
   border-radius: 999px;
   padding: 8px 14px;
   font-weight: 650;
   line-height: 1;
-  box-shadow: 0 4px 12px rgba(0,0,0,.12);
+  box-shadow: 0 6px 14px rgba(0,0,0,.12);
   cursor: pointer;
 }
 
-/* Hover/active polish */
 .listen-btn:hover{ filter: brightness(0.98); }
 .listen-btn:active{ transform: translateY(1px); }
 
@@ -132,57 +159,16 @@ body:has(.ai-mini-root.show) [data-ai-fab]{
   .ai-card{ width: min(96vw, 420px); }
 }
 
-/* ---- Mini Player • Compact Card v3 (clean) ---- */
-:root{
-  /* theme (kept for shadows/borders only) */
-  --mp-font: inherit;
-  --mp-bg: rgba(16, 20, 24, .92);
-  --mp-fg: inherit;                 /* <- text follows page color */
-  --mp-muted: color-mix(in srgb, currentColor 55%, transparent);
-  --mp-accent: color-mix(in srgb, currentColor 40%, #4DA3FF 60%);
-  --mp-border: color-mix(in srgb, currentColor 12%, transparent);
-  --mp-radius: 16px;
-  --mp-shadow: 0 20px 50px rgba(0,0,0,.25);
-
-  /* layout spacing */
-  --mp-gap-top:      20px;
-  --mp-gap-bottom:    0px;
-  --mp-controls-gap:  1px;
-
-  /* sizing */
-  --mp-width: 820px;
-
-  /* buttons and icons */
-  --mp-btn-center: 56px;
-  --mp-btn-side:   42px;
-  --mp-icon-center: 30px;
-  --mp-icon-side:   56px;
-
-  /* progress */
-  --mp-track-h: 1px;
-  --mp-knob:    4px;
-  --mp-progress-bg: color-mix(in srgb, currentColor 15%, transparent);
-  --mp-progress-fill: currentColor;
-
-  /* icon nudges */
-  --mp-center-nudge-x: 0px;
-  --mp-center-nudge-y: 0px;
-  --mp-side-nudge-x:   -7.5px;
-  --mp-side-nudge-y:   0px;
-}
-
- 
-
 /* Card */
 .ai-card{
   width: 100%;
   max-width: 100%;
   margin: 0;
-  background: #ffffff;
-  color: var(--mp-fg);                  /* <- follow page text color */
+  background: var(--mp-bg);
+  color: var(--mp-fg);
   border: 1px solid var(--mp-border);
   border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   font-family: var(--mp-font);
   padding: 12px 14px 8px;
 }
@@ -270,12 +256,12 @@ body:has(.ai-mini-root.show) [data-ai-fab]{
   line-height: 0; overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--mp-border);
-  background: color-mix(in srgb, currentColor 6%, transparent); /* subtle tint of page color */
-  color: currentColor;
+  background: #f7e5cc;
+  color: var(--mp-fg);
   cursor: pointer;
   transition: transform .08s ease, border-color .12s ease, background .12s ease;
 }
-.ai-btn:hover{ border-color: color-mix(in srgb, var(--mp-accent) 60%, transparent); }
+.ai-btn:hover{ border-color: #d7b78d; }
 .ai-btn:active{ transform: translateY(1px) scale(.98); }
 .ai-btn.side{ width: var(--mp-btn-side); height: var(--mp-btn-side); }
 
@@ -328,6 +314,7 @@ html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(-
   justify-content:flex-start;
   padding: 4px 16px 12px;
   font-size: 13px;
+  color: var(--mp-muted);
 }
 .ai-rate{
   -webkit-appearance: none; appearance: none;
@@ -352,7 +339,7 @@ html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(-
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
-  color:#6b7280;
+  color:#a38a6c;
   cursor:pointer;
 }
 .ai-close:after{ content:"×"; font-size:16px; font-weight:700; line-height:1; }
