@@ -9,9 +9,9 @@
   <meta name="author" content="National Geographic Staff" />
 
   <!-- Player styles (served from FastAPI /static) -->
-  <link rel="stylesheet" href="http://localhost:8000/static/mini-player.css?v=108" />
-  <link rel="stylesheet" href="http://localhost:8000/static/pro-player.css?v=108" />
-  <script defer src="http://localhost:8000/static/mini-player.js?v=24"></script>
+  <link rel="stylesheet" href="https://hgtts.onrender.com/static/mini-player.css?v=108" />
+  <link rel="stylesheet" href="https://hgtts.onrender.com/static/pro-player.css?v=108" />
+  <script defer src="https://hgtts.onrender.com/static/mini-player.js?v=24"></script>
 
   <!-- ===== Page look + icon variables for mini-player (optional) ===== -->
   <style>
@@ -87,13 +87,14 @@
   (function () {
     var s = document.createElement("script");
     s.defer = true;
-    s.src = "http://localhost:8000/static/tts-widget.v1.js?v=108";
+    s.src = "https://hgtts.onrender.com/static/tts-widget.v1.js?v=108";
     // Tell the widget to call my FastAPI backend instead of window.location.origin
-    s.setAttribute("data-ail-api-base", "http://localhost:8000");
+    s.setAttribute("data-ail-api-base", "https://hgtts.onrender.com");
     s.setAttribute("data-ail-tenant", "demo");
     document.body.appendChild(s);
   })();
-  </script>
+</script>
+
 
 </body>
 </html>
