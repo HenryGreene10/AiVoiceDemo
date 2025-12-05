@@ -432,35 +432,21 @@ body.ai-mini-open,
   display: none !important;
 }
 
-/* High-contrast outline + text for readability */
-.ai-mini-root{
+/* EasyAudio demo: higher contrast + full outline */
+.ai-mini-root {
+  box-sizing: border-box;
   border-radius: 16px;
-  border: 1px solid rgba(0,0,0,0.35);
-  color: #111;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
-.ai-mini-root .ai-card,
-.ai-mini-root .ai-timebar,
-.ai-mini-root #mp-elapsed,
-.ai-mini-root #mp-total,
-.ai-mini-root .ai-footer,
-.ai-mini-root .ai-rate,
-.ai-mini-root .ai-rate option,
+
+/* Make time labels and rate text solid black for readability */
 .ai-mini-root .ai-time,
 .ai-mini-root .ai-duration,
-.ai-mini-root .ai-meta,
-.ai-mini-root .ai-speed{
-  color: #111;
-}
-.ai-mini-root button,
-.ai-mini-root .ai-btn{
-  color: #111;
-}
-.ai-mini-root button *,
-.ai-mini-root .ai-btn *{
-  color: #111 !important;
-  fill: currentColor !important;
-  stroke: currentColor !important;
-  opacity: 1 !important;
+.ai-mini-root .ai-rate,
+.ai-mini-root .ai-speed,
+.ai-mini-root .ai-meta {
+  color: #000;
 }
 
  
