@@ -57,10 +57,34 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
   // Default icons (inline SVG)
   const DEFAULT_ICONS = {
-    play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
-    pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
-    back:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 7v10l-6-5 6-5zm1 10V7l6 5-6 5z"/></svg>',
-    fwd:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 7v10l6-5-6-5zm-1 10V7l-6 5 6 5z"/></svg>',
+    play: `
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 3.5v9l7-4.5-7-4.5z" fill="currentColor"/>
+      </svg>
+    `,
+    pause: `
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="3" width="3" height="10" rx="1" fill="currentColor"/>
+        <rect x="9" y="3" width="3" height="10" rx="1" fill="currentColor"/>
+      </svg>
+    `,
+    back: `
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8.5 4l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M11.5 4l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+      </svg>
+    `,
+    fwd: `
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+      </svg>
+    `,
+    close: `
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    `,
   };
 
   // Live icon map (can be overridden)
@@ -249,11 +273,9 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
   // put near your other helpers
   function setPlayVisual(play, isPlaying){
-    play.setAttribute('data-icon', isPlaying ? 'pause' : 'play');
-    // update inline SVG if you're using defaults
-    play.innerHTML = isPlaying
-      ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'
-      : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    const key = isPlaying ? 'pause' : 'play';
+    play.setAttribute('data-icon', key);
+    renderIcon(play, ICONS[key]);
   }
 
   function bindMini(audio, meta){
@@ -362,11 +384,9 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     };
 
     function setPlayVisual(isPlaying){
-      play.setAttribute('data-icon', isPlaying ? 'pause' : 'play');
-      // swap inline svg if you're not using custom masks
-      play.innerHTML = isPlaying
-        ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'
-        : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+      const key = isPlaying ? 'pause' : 'play';
+      play.setAttribute('data-icon', key);
+      renderIcon(play, ICONS[key]);
     }
 
     function setProgress(){
@@ -446,6 +466,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     // Wire up close functionality
     const overlay = document.getElementById('ai-overlay');
     const closeBtn = q('#mp-close');
+    renderIcon(closeBtn, ICONS.close);
 
     function closePlayer(){
       try{ pos.save(); }catch{}
@@ -487,13 +508,14 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     audio(){ return document.getElementById('ai-listen-audio'); },
     /** Override icons at runtime. Accepts inline <svg> strings OR image URLs. */
     useIcons(map){
-      for (const k of ['play','pause','back','fwd']){
+      for (const k of ['play','pause','back','fwd','close']){
         if (map?.[k]) ICONS[k] = map[k];
       }
       // Refresh current buttons if mounted:
       const wrap = $('#ai-mini'); if (!wrap) return;
       renderIcon(wrap.querySelector('#mp-back'),  ICONS.back);
       renderIcon(wrap.querySelector('#mp-fwd'),   ICONS.fwd);
+      renderIcon(wrap.querySelector('#mp-close'), ICONS.close);
       // center button depends on state; just set to current:
       const play = wrap.querySelector('#mp-play');
       if (play){

@@ -28,11 +28,7 @@
   --mp-side-nudge-y: 0px;
 }
 
-/* 1) Remove close (×) and reclaim space */
-.ai-close { display: none !important; }
-.ai-card { padding-top: 12px; }
-
-/* 2) Title: true ellipsis */
+/* Title: true ellipsis */
 .ai-title{
   display:block;
   max-width:100%;
@@ -389,10 +385,15 @@ html.custom-icons .ai-btn[data-icon="fwd"]::before   { -webkit-mask-image: var(-
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
-  color:#a38a6c;
+  color:#1a1c1a;
   cursor:pointer;
+  padding: 0;
 }
-.ai-close:after{ content:"×"; font-size:16px; font-weight:700; line-height:1; }
+.ai-close svg{
+  width: 14px;
+  height: 14px;
+  display: block;
+}
 
 /* Overlay for click-outside to close */
 #ai-overlay{
@@ -429,6 +430,37 @@ body.ai-mini-open,
 /* Hide track title in the mini player for a cleaner look */
 .ai-mini-root .ai-title {
   display: none !important;
+}
+
+/* High-contrast outline + text for readability */
+.ai-mini-root{
+  border-radius: 16px;
+  border: 1px solid rgba(0,0,0,0.35);
+  color: #111;
+}
+.ai-mini-root .ai-card,
+.ai-mini-root .ai-timebar,
+.ai-mini-root #mp-elapsed,
+.ai-mini-root #mp-total,
+.ai-mini-root .ai-footer,
+.ai-mini-root .ai-rate,
+.ai-mini-root .ai-rate option,
+.ai-mini-root .ai-time,
+.ai-mini-root .ai-duration,
+.ai-mini-root .ai-meta,
+.ai-mini-root .ai-speed{
+  color: #111;
+}
+.ai-mini-root button,
+.ai-mini-root .ai-btn{
+  color: #111;
+}
+.ai-mini-root button *,
+.ai-mini-root .ai-btn *{
+  color: #111 !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+  opacity: 1 !important;
 }
 
  
