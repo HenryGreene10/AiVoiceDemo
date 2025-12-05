@@ -310,8 +310,8 @@ body:has(.ai-mini-root.show) [data-ai-fab]{
   transform: translate(var(--mp-center-nudge-x), var(--mp-center-nudge-y));
 }
 .ai-btn.side svg, .ai-btn.side img{
-  width: var(--mp-icon-side);
-  height: var(--mp-icon-side);
+  width: 22px;
+  height: 22px;
   transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
 }
 
