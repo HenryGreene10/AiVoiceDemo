@@ -347,6 +347,8 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     back.setAttribute('data-icon','back');
     fwd.setAttribute('data-icon','fwd');
     play.setAttribute('data-icon','play');
+    renderIcon(back, ICONS.back);
+    renderIcon(fwd, ICONS.fwd);
 
     const rate  = q('#mp-rate');
     const seek  = q('#mp-seek');
