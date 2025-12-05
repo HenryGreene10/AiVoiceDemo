@@ -89,23 +89,39 @@
 }
 
 /* 4) Listen button: inline pill under the title (not floating) */
-#ai-listen-btn, .listen-btn{
+#ai-listen-btn,
+.listen-btn{
   position: static !important;
-  background: #fffdf8 !important;
-  color: #1a1c1a !important;
-  border: 2px solid #e0c9a6;
+  background: #3b2a1c !important;
+  color: #fffdf8 !important;
+  border: 2px solid #1a1c1a;
   border-radius: 9999px;
-  padding: 8px 16px;
-  font-weight: 650;
+  padding: 8px 20px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   line-height: 1;
-  box-shadow: 0 8px 18px rgba(0,0,0,.12);
+  box-shadow: 0 8px 18px rgba(0,0,0,.2);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  transition: transform .08s ease, background-color .08s ease, box-shadow .08s ease;
 }
-#ai-listen-btn:hover{ filter: brightness(0.98); border-color: #d7b78d; }
-#ai-listen-btn:active{ transform: translateY(1px); }
+#ai-listen-btn:hover,
+#ai-listen-btn:focus-visible,
+.listen-btn:hover,
+.listen-btn:focus-visible{
+  background: #2c1f15 !important;
+  box-shadow: 0 0 0 1px #000;
+  transform: translateY(-0.5px);
+  outline: none;
+}
+#ai-listen-btn:active,
+.listen-btn:active{
+  transform: translateY(0);
+  box-shadow: none;
+}
 
 /* 5) Mobile niceties */
 @media (max-width: 480px){
@@ -132,19 +148,43 @@
 .listen-btn,
 #ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
   position: static !important;
-  background: #fffdf8 !important;
-  color: #1a1c1a !important;
-  border: 2px solid #e0c9a6;
+  background: #3b2a1c !important;
+  color: #fffdf8 !important;
+  border: 2px solid #1a1c1a;
   border-radius: 999px;
   padding: 8px 14px;
-  font-weight: 650;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   line-height: 1;
-  box-shadow: 0 6px 14px rgba(0,0,0,.12);
+  box-shadow: 0 6px 14px rgba(0,0,0,.2);
   cursor: pointer;
+  transition: transform .08s ease, background-color .08s ease, box-shadow .08s ease;
 }
 
-.listen-btn:hover{ filter: brightness(0.98); }
-.listen-btn:active{ transform: translateY(1px); }
+.listen-btn:hover,
+.listen-btn:focus-visible,
+#ai-fab:hover,
+#ai-fab:focus-visible,
+.ai-fab:hover,
+.ai-fab:focus-visible,
+[data-ai-fab]:hover,
+[data-ai-fab]:focus-visible,
+button[aria-label="Listen"]:hover,
+button[aria-label="Listen"]:focus-visible{
+  background: #2c1f15 !important;
+  box-shadow: 0 0 0 1px #000;
+  transform: translateY(-0.5px);
+  outline: none;
+}
+.listen-btn:active,
+#ai-fab:active,
+.ai-fab:active,
+[data-ai-fab]:active,
+button[aria-label="Listen"]:active{
+  transform: translateY(0);
+  box-shadow: none;
+}
 
 /* 5) DISABLE any global auto-hide rules for FAB while mini is open */
 body:has(.ai-mini-root.show) #ai-fab,
@@ -277,6 +317,16 @@ body:has(.ai-mini-root.show) [data-ai-fab]{
   width: var(--mp-icon-side);
   height: var(--mp-icon-side);
   transform: translate(var(--mp-side-nudge-x), var(--mp-side-nudge-y));
+}
+
+.ai-btn svg{
+  fill: currentColor;
+  stroke: currentColor;
+  display: block;
+}
+.ai-btn svg *{
+  fill: currentColor;
+  stroke: currentColor;
 }
 
 /* Custom icons via mask */

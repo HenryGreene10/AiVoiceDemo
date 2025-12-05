@@ -232,14 +232,16 @@
   color: var(--ea-ink-soft);
 }
 
-.ea-listen-button {
+.ea-listen-button,
+[data-ail-listen] {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 18px;
-  border: 2px solid var(--ea-border);
-  background-color: #1a1c1a !important;
-  color: #f3dfc1 !important;
+  padding: 8px 20px;
+  border: 2px solid #1a1c1a;
+  background-color: #3b2a1c;
+  color: #fffdf8;
   font-family: "Courier New", monospace;
   font-weight: 700;
   font-size: 14px;
@@ -247,16 +249,25 @@
   letter-spacing: 0.08em;
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
-  transition: transform 0.08s ease, filter 0.08s ease;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+  transition: transform 0.08s ease, background-color 0.08s ease, box-shadow 0.08s ease;
+  text-decoration: none;
 }
 
-.ea-listen-button:hover {
-  filter: brightness(1.05);
+.ea-listen-button:hover,
+.ea-listen-button:focus-visible,
+[data-ail-listen]:hover,
+[data-ail-listen]:focus-visible {
+  background-color: #2c1f15;
+  box-shadow: 0 0 0 1px #000;
+  transform: translateY(-0.5px);
+  outline: none;
 }
 
-.ea-listen-button:active {
-  transform: translateY(1px);
+.ea-listen-button:active,
+[data-ail-listen]:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .ea-install-card {

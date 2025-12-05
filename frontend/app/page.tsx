@@ -33,7 +33,12 @@ export default function Page() {
               <header className="ea-article-header">
                 <h2>Why EasyAudio?</h2>
                 <p className="ea-article-meta">by Henry G.</p>
-                <button id="ail-listen-btn" className="ea-listen-button listen-btn">
+                <button
+                  id="ail-listen-btn"
+                  className="ea-listen-button listen-btn ail-listen"
+                  data-ail-listen="true"
+                  type="button"
+                >
                   Listen
                 </button>
               </header>

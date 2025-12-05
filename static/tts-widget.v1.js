@@ -340,20 +340,9 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
           return;
         }
 
-        // 2) Otherwise, auto-inject under the first <h1>.
-        const h1 = document.querySelector("h1");
-        if (!h1) return;
-
-        btn = document.createElement("button");
-        btn.className = "ail-listen";
-        btn.type = "button";
-        btn.textContent = labelIdle;
-        btn.id = "ai-listen-btn";
-        btn.classList.add("listen-btn");
-        if (className) btn.classList.add(className);
-
-        h1.insertAdjacentElement("afterend", btn);
-        attachListenHandler(btn);
+        // NOTE: This block previously auto-injected a Listen button directly after the first <h1>.
+        // To avoid surprise duplicates, the widget now leaves the DOM untouched when no trigger exists.
+        console.debug("[AIL] No .ail-listen trigger found; skipping auto-insert");
       }
 
       initListenButton();
