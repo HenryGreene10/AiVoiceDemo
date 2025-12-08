@@ -111,58 +111,6 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     return text.trim();
   }
 
-  // --- small cleaners ---
-  function stripLeadingByLines(txt) {
-    // remove leading “By …” line(s) the body might contain
-    return (txt || "")
-      .replace(/^\s*By\s+.+?\n+/i, "")
-      .replace(/^\s*By\s+.+?\s{2,}/i, "");
-  }
-
-  // --- narration shaping (Title → Subtitle → By Author → Body) ---
-  function buildNarration(selector) {
-    const container = document.querySelector(selector) || document.querySelector("#demo-article") || document.body;
-
-    const title = (document.querySelector("h1")?.innerText || "").trim();
-    const subtitle = (document.querySelector(".dek, .subtitle, h2")?.innerText || "").trim();
-    const author = (document.querySelector(".byline")?.textContent || "").replace(/^By\s*/i,"").trim();
-
-    // collect story text only
-    const clone = container.cloneNode(true);
-    clone.querySelectorAll([
-      "figure,figcaption,picture,video,iframe,svg,canvas",
-      ".caption,.credit,.media,.gallery,.photo",
-      "sup,sub,.citation,[role='doc-footnote'],.footnotes,.references",
-      "aside,.related,.read-more,.recommended",
-      "nav,header,footer,form,script,style"
-    ].join(",")).forEach(n => n.remove());
-
-    // paragraphs/lists/quotes as blocks
-    const blocks = [];
-    clone.querySelectorAll("p,li,blockquote").forEach(n => {
-      const s = (n.innerText || "").replace(/\s+/g," ").trim();
-      if (s) blocks.push(s);
-    });
-
-    let body = blocks.join(" ").trim();
-
-    // de-dup title/byline if repeated at body start
-    if (title && body.toLowerCase().startsWith(title.toLowerCase())) {
-      body = body.slice(title.length).trim();
-    }
-    body = body.replace(/^\s*By\s+.+?(\.\s+|  +|\n+)/i, "");
-
-    // paragraph breaks → natural pauses in most TTS
-    const parts = [];
-    if (title)   parts.push(title);
-    if (subtitle)parts.push(subtitle);
-    if (author)  parts.push(`By ${author}`);
-    if (body)    parts.push(body);
-
-    const plain = parts.join("\n\n").slice(0, 15000); // generous safety cap
-    return { plain, title, subtitle, author, body };
-  }
-
   // --- ensure mini-player code ---
   function ensureMiniStyles(scriptSrc) {
     if (document.querySelector('link[data-ail-mini-css]')) return;
@@ -260,140 +208,68 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     });
   }
 
-  function getExplicitArticles() {
-    return Array.from(document.querySelectorAll("[data-ail-article]"));
-  }
-
-  function resolveArticleContainer(listenButton) {
-    const explicit = getExplicitArticles();
-
-    if (explicit.length > 0) {
-      if (listenButton) {
-        const containing = explicit.find((node) => node.contains(listenButton));
-        if (containing) return containing;
-      }
-
-      if (explicit.length === 1) {
-        return explicit[0];
-      }
-
-      return explicit[0];
-    }
-
-    if (listenButton) {
-      const local = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
-      if (local) return local;
-    }
-
-    const global = document.querySelector("article,[itemtype*='Article'],[role='main'],main");
-    if (global) return global;
-
-    return null;
-  }
-  const NOISE_CLASS_RE = /(nav|menu|footer|header|sidebar|aside|promo|banner|share|social|related|newsletter)/i;
-  const NOISE_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "FORM"]);
-  const FALLBACK_TAGS = new Set(["section", "div", "article", "main"]);
-  const SKIP_CONTAINER_SELECTOR = "nav,header,footer,aside,form,button,input,textarea,select";
-  const BODY_TAG_SELECTOR = "p,li,blockquote";
-  const MIN_ARTICLE_TEXT = 300;
-
-  function cleanNodeText(node) {
-    return (node?.innerText || node?.textContent || "").replace(/\s+/g, " ").trim();
-  }
-
-  function textLength(node) {
-    return cleanNodeText(node).length;
-  }
-
-  function isNoiseContainer(node) {
-    if (!node || !node.tagName) return false;
-    if (NOISE_TAGS.has(node.tagName.toUpperCase())) return true;
-    const haystack = `${node.className || ""} ${node.id || ""}`.toLowerCase();
-    return NOISE_CLASS_RE.test(haystack);
-  }
-
-  function shouldSkipNode(node) {
-    if (!node) return true;
-    if (node.closest(SKIP_CONTAINER_SELECTOR)) return true;
-    return isNoiseContainer(node);
-  }
-
-  function pickTitleFromArticle(articleEl) {
-    if (!articleEl) return "";
-    const titleNode =
-      articleEl.querySelector("[data-ail-title]") ||
-      articleEl.querySelector("h1") ||
-      articleEl.querySelector("h2");
-    return cleanNodeText(titleNode);
-  }
-
-  function pickAuthorFromArticle(articleEl) {
-    if (!articleEl) return "";
-    const explicit =
-      articleEl.querySelector("[data-ail-author]") ||
-      articleEl.querySelector("[itemprop='author']") ||
-      articleEl.querySelector("[rel='author']");
-    if (explicit) {
-      return cleanNodeText(explicit).replace(/^by\s*/i, "");
-    }
-    const fallback = Array.from(articleEl.querySelectorAll("*")).find((node) => {
-      const haystack = `${node.className || ""} ${node.id || ""}`.toLowerCase();
-      if (!haystack) return false;
-      return haystack.includes("author") || haystack.includes("byline");
-    });
-    return cleanNodeText(fallback).replace(/^by\s*/i, "");
-  }
-
-  function collectBodyText(articleEl) {
-    if (!articleEl) return "";
-    const scoped = articleEl.querySelector("[data-ail-body]") || articleEl;
-    const blocks = [];
-    scoped.querySelectorAll(BODY_TAG_SELECTOR).forEach((node) => {
-      if (shouldSkipNode(node)) return;
-      const text = cleanNodeText(node);
-      if (text) blocks.push(text);
-    });
-    if (blocks.length) {
-      return stripLeadingByLines(blocks.join("\n\n")).trim();
-    }
-    const fallback = cleanNodeText(scoped);
-    return stripLeadingByLines(fallback);
+  function getExplicitArticle() {
+    const list = document.querySelectorAll("[data-ail-article]");
+    if (list.length === 0) return null;
+    if (list.length === 1) return list[0];
+    return list[0];
   }
 
   function extractArticleParts(listenButton) {
-    const container = resolveArticleContainer(listenButton);
-    if (!container) {
-      console.warn("[EasyAudio] No article container found for Listen button");
+    let article = getExplicitArticle();
+
+    if (!article) {
+      if (listenButton) {
+        article = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
+      }
+      if (!article) {
+        article = document.querySelector("article,[itemtype*='Article'],[role='main'],main");
+      }
+    }
+
+    if (!article) {
+      console.warn("[EasyAudio] No article container found");
       return { title: "", author: "", bodyText: "", fullText: "" };
     }
 
-    const title = pickTitleFromArticle(container);
-    const author = pickAuthorFromArticle(container);
-    const bodyText = collectBodyText(container).trim();
-    const parts = [];
-    if (title) parts.push(title);
-    if (author) parts.push(`By ${author}`);
-    if (bodyText) parts.push(bodyText);
-    const fullText = parts.join("\n\n").trim();
+    const titleEl =
+      article.querySelector("[data-ail-title]") ||
+      article.querySelector("h1, h2");
+    const authorEl = article.querySelector("[data-ail-author]");
+    const title = titleEl ? titleEl.textContent.replace(/\s+/g, " ").trim() : "";
+    const author = authorEl ? authorEl.textContent.replace(/\s+/g, " ").trim() : "";
 
-    if (!fullText || fullText.length < 20) {
-      console.warn("[EasyAudio] Extracted article text is very short or empty", {
-        hasExplicit: getExplicitArticles().length > 0,
-        container
-      });
-    } else {
-      console.log("[EasyAudio] Using article container", {
-        hasExplicit: getExplicitArticles().length > 0,
-        snippet: fullText.slice(0, 120)
-      });
+    const bodyRoot = article.querySelector("[data-ail-body]") || article;
+    const blockedTags = new Set(["NAV", "ASIDE", "FOOTER", "HEADER"]);
+    const bodyParts = [];
+    const walker = document.createTreeWalker(
+      bodyRoot,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(node) {
+          if (blockedTags.has(node.tagName)) return NodeFilter.FILTER_REJECT;
+          if (node.matches("p, li, blockquote")) return NodeFilter.FILTER_ACCEPT;
+          return NodeFilter.FILTER_SKIP;
+        }
+      }
+    );
+
+    let current;
+    while ((current = walker.nextNode())) {
+      const text = (current.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) bodyParts.push(text);
     }
 
-    return {
-      title,
-      author,
-      bodyText,
-      fullText
-    };
+    const bodyText = bodyParts.join("\n\n").trim();
+    const sections = [];
+    if (title) sections.push(title);
+    if (author) sections.push(author);
+    if (bodyText) sections.push(bodyText);
+    const fullText = sections.join("\n\n").trim();
+    const snippet = fullText.slice(0, 160).replace(/\s+/g, " ");
+    console.log("[EasyAudio] TTS text snippet:", snippet);
+
+    return { title, author, bodyText, fullText };
   }
 
 
@@ -439,7 +315,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
               "EasyAudio";
             let subtitleText = getSubtitle() || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
 
-            const hasExplicit = getExplicitArticles().length > 0;
+            const hasExplicit = !!getExplicitArticle();
             if (!finalText || finalText.length < 20) {
               console.warn("[EasyAudio] finalText empty/short; not falling back to legacy scraping", {
                 hasExplicit

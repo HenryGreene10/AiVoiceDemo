@@ -28,40 +28,42 @@ export default function Page() {
         </section>
 
         {/* DEMO SECTION */}
-        <section id="demo" className="ea-section">
-          <div className="ea-demo-article-wrap">
-            <article className="ea-demo-article" id="ea-demo-article" data-ail-article>
-              <h1 data-ail-title>Why EasyAudio Makes Your Articles More Impactful</h1>
-              <p className="ea-article-meta" data-ail-author>
-                By Henry Greene
-              </p>
-              <button
-                id="ail-listen-btn"
-                className="ea-listen-button listen-btn ail-listen"
-                data-ail-listen="true"
-                type="button"
-              >
-                Listen
-              </button>
+        <section id="demo" className="ea-section ea-demo-section">
+          <article className="ea-demo-article" data-ail-article>
+            <h1 className="ea-demo-title" data-ail-title>
+              Why EasyAudio Makes Your Articles More Impactful
+            </h1>
+            <p className="ea-demo-author" data-ail-author>
+              By Henry Greene
+            </p>
+            <button
+              type="button"
+              id="ail-listen-btn"
+              className="ea-listen-button ea-demo-listen-btn listen-btn ail-listen"
+              data-ail-listen="true"
+            >
+              LISTEN
+            </button>
 
-                <div className="ea-article-body" data-ail-body>
-                <p>
-                  Readers love audio versions of articles. They spend more time on your site, remain engaged
-                  longer, and share articles more frequently when they can listen instead while they read.
-                </p>
-                <p>
-                  EasyAudio enables seemless integration of clean audio voiceovers. By adding a single script to your
-                  article, the pieces on your site instantly become playable. A "Listen" button appears
-                  under the title, generates the narration, and plays through the mini-player. If you
-                  update the article, the audio updates automatically.
-                </p>
-                <p>
-                  There are no extra steps in your publishing flow, no exporting or uploading audio
-                  files. It simply runs in the background and keeps all of your articles listenable at scale.
-                </p>
-              </div>
-            </article>
-          </div>
+            <div className="ea-demo-body" data-ail-body>
+              <p>
+                Readers love audio versions of articles. They spend more time on your site, remain engaged longer, and
+                share articles more frequently when they can listen instead while they read.
+              </p>
+              <p>
+                EasyAudio gives you a seamless integration of clean audio voiceovers. By adding a single script to your
+                article template, the pieces on your site instantly become playable. A "Listen" button appears under the
+                title, generates the narration, and plays through our mini-player.
+              </p>
+              <p>
+                If you update the article, the audio updates automatically and your readers continue to hit play like
+                normal. There are no extra steps in your publishing flow, no exporting or uploading audio files.
+              </p>
+              <p>
+                It simply runs in the background and keeps all of your articles listenable at scale.
+              </p>
+            </div>
+          </article>
         </section>
 
         {/* PRICING */}
