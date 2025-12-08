@@ -72,7 +72,7 @@ export default function Page() {
             </div>
 
             <div className="ea-plan-row">
-              <div className="ea-plan">
+              <div className="ea-plan ea-plan--highlight">
                 <div className="ea-plan-name ea-pricing-plan-title">Free Trial</div>
                 <div className="ea-plan-desc">Try a week free!</div>
                 <div className="ea-plan-price ea-pricing-price">
@@ -89,7 +89,7 @@ export default function Page() {
                 </ul>
               </div>
 
-              <div className="ea-plan">
+              <div className="ea-plan ea-plan--highlight">
                 <div className="ea-plan-name ea-pricing-plan-title">Starter</div>
                 <div className="ea-plan-desc">For personal blogs &amp; small newsletters.</div>
                 <div className="ea-plan-price ea-pricing-price">
@@ -169,12 +169,15 @@ export default function Page() {
           </div>
 
           <div className="ea-install-card">
-            <a
+            <button
+              type="button"
               className="ea-plan-cta"
-              href="mailto:hello@easyaudio.dev?subject=EasyAudio%20Setup"
+              data-tally-open="XxLqkV"
+              data-tally-emoji-text="👋"
+              data-tally-emoji-animation="wave"
             >
               Get Free Installation
-            </a>
+            </button>
             <details style={{ marginTop: 16 }}>
               <summary style={{ cursor: "pointer", fontWeight: 600 }}>Developer snippet</summary>
               <pre
