@@ -264,13 +264,32 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     return Array.from(document.querySelectorAll("[data-ail-article]"));
   }
 
-  const ARTICLE_HINT_SELECTORS = [
-    "[data-ail-article]",
-    "article",
-    '[itemtype*="Article"]',
-    '[itemtype*="article"]',
-    "main"
-  ];
+  function resolveArticleContainer(listenButton) {
+    const explicit = getExplicitArticles();
+
+    if (explicit.length > 0) {
+      if (listenButton) {
+        const containing = explicit.find((node) => node.contains(listenButton));
+        if (containing) return containing;
+      }
+
+      if (explicit.length === 1) {
+        return explicit[0];
+      }
+
+      return explicit[0];
+    }
+
+    if (listenButton) {
+      const local = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
+      if (local) return local;
+    }
+
+    const global = document.querySelector("article,[itemtype*='Article'],[role='main'],main");
+    if (global) return global;
+
+    return null;
+  }
   const NOISE_CLASS_RE = /(nav|menu|footer|header|sidebar|aside|promo|banner|share|social|related|newsletter)/i;
   const NOISE_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "FORM"]);
   const FALLBACK_TAGS = new Set(["section", "div", "article", "main"]);
@@ -291,44 +310,6 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     if (NOISE_TAGS.has(node.tagName.toUpperCase())) return true;
     const haystack = `${node.className || ""} ${node.id || ""}`.toLowerCase();
     return NOISE_CLASS_RE.test(haystack);
-  }
-
-  function findExplicitArticle(listenButton) {
-    const articles = getExplicitArticles();
-    if (!listenButton && articles.length === 1) {
-      return articles[0];
-    }
-
-    if (listenButton) {
-      const fromButton = listenButton.closest("[data-ail-article]");
-      if (fromButton) return fromButton;
-    }
-
-    if (articles.length === 1) {
-      return articles[0];
-    }
-
-    return null;
-  }
-
-  function findArticleContainer(listenButton) {
-    const explicit = findExplicitArticle(listenButton);
-    if (explicit) return explicit;
-
-    const explicitList = getExplicitArticles();
-    if (explicitList.length > 0) {
-      return null;
-    }
-
-    if (listenButton) {
-      const local = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
-      if (local) return local;
-    }
-
-    const global = document.querySelector("article,[itemtype*='Article'],[role='main'],main");
-    if (global) return global;
-
-    return null;
   }
 
   function shouldSkipNode(node) {
@@ -380,7 +361,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   function extractArticleParts(listenButton) {
-    const container = findArticleContainer(listenButton);
+    const container = resolveArticleContainer(listenButton);
     if (!container) {
       console.warn("[EasyAudio] No article container found for Listen button");
       return { title: "", author: "", bodyText: "", fullText: "" };
