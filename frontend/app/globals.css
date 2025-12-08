@@ -414,8 +414,9 @@
 }
 
 .ea-install-card details {
-  display: inline-block;
+  display: block;
   text-align: left;
+  margin-top: 16px;
 }
 
 .ea-plan-features li {
