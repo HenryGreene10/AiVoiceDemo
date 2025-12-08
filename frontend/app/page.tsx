@@ -90,7 +90,6 @@ export default function Page() {
                 <ul className="ea-plan-features">
                   <li>Up to 10 article renders</li>
                   <li>EasyAudio mini-player on one site</li>
-                  <li>Server-side caching included</li>
                   <li>Email support</li>
                 </ul>
               </div>
@@ -113,7 +112,6 @@ export default function Page() {
                 <ul className="ea-plan-features">
                   <li>Up to 100 article renders / month</li>
                   <li>EasyAudio mini-player on one site</li>
-                  <li>Server-side caching included</li>
                   <li>Email support</li>
                 </ul>
               </div>
@@ -137,7 +135,6 @@ export default function Page() {
                   <li>Up to 500 article renders / month</li>
                   <li>Mini-player on up to 3 sites</li>
                   <li>Priority support</li>
-                  <li>Basic listener metrics</li>
                 </ul>
               </div>
             </div>

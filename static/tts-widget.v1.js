@@ -289,7 +289,24 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     return NOISE_CLASS_RE.test(haystack);
   }
 
+  function findExplicitArticle(listenButton) {
+    if (!listenButton) return null;
+    const container = listenButton.closest("[data-ail-article]");
+    if (container) return container;
+    const all = document.querySelectorAll("[data-ail-article]");
+    if (all.length === 1) return all[0];
+    return null;
+  }
+
   function findArticleContainer(listenButton) {
+    const explicit = findExplicitArticle(listenButton);
+    if (explicit) return explicit;
+
+    const hasAnyExplicit = document.querySelector("[data-ail-article]");
+    if (!explicit && hasAnyExplicit) {
+      return null;
+    }
+
     if (listenButton) {
       for (const sel of ARTICLE_HINT_SELECTORS) {
         const match = listenButton.closest(sel);
@@ -368,10 +385,22 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   function extractArticleParts(listenButton) {
-    const container = findArticleContainer(listenButton);
+    let container = findExplicitArticle(listenButton);
+
     if (!container) {
+      const hasAnyExplicit = document.querySelector("[data-ail-article]");
+      if (!hasAnyExplicit) {
+        container =
+          listenButton?.closest("article,[itemtype*='Article'],main") ||
+          document.querySelector("article,[itemtype*='Article'],main");
+      }
+    }
+
+    if (!container) {
+      console.warn("[EasyAudio] No article container found for Listen button");
       return { title: "", author: "", bodyText: "", fullText: "" };
     }
+
     const title = pickTitleFromArticle(container);
     const author = pickAuthorFromArticle(container);
     const bodyText = collectBodyText(container).trim();
