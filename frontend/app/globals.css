@@ -407,6 +407,11 @@
   display: inline-block;
 }
 
+.ea-why-list {
+  margin: 0 auto;
+  text-align: left;
+}
+
 .ea-pricing-shell {
   max-width: 1100px;
   margin: 0 auto;

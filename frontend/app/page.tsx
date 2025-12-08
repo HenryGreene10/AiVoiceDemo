@@ -64,62 +64,6 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="ea-section">
-          <div className="ea-section-header">
-            <h2 className="ea-section-title">Why Publishers Use EasyAudio</h2>
-          </div>
-          <ul className="ea-plan-features">
-            <li>A Listen button on every article with one script</li>
-            <li>Automatic text extraction and high-quality narration</li>
-            <li>Pay once per article, not per listen</li>
-            <li>Works on mobile and desktop. No extensions or installs required</li>
-            <li>Inline player that automatically matches your brand</li>
-            <li>Zero maintenance for your team</li>
-          </ul>
-        </section>
-
-        {/* INSTALL */}
-        <section id="install" className="ea-section">
-          <div className="ea-section-header">
-            <h2 className="ea-section-title">Install in 30 Seconds</h2>
-            <p className="ea-section-subtitle">
-              EasyAudio installs with a single HTML snippet added to your article template. Prefer
-              someone else to wire it up? We&apos;ll set it up for you for free.
-            </p>
-          </div>
-
-          <div className="ea-install-card">
-            <a
-              className="ea-plan-cta"
-              href="mailto:hello@easyaudio.dev?subject=EasyAudio%20Setup"
-            >
-              Get Free Installation
-            </a>
-            <details style={{ marginTop: 16 }}>
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Developer snippet</summary>
-              <pre
-                style={{
-                  overflowX: "auto",
-                  padding: "10px 12px",
-                  background: "#1a1c1a",
-                  color: "#f3dfc1",
-                  border: "2px solid #e0c9a6",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
-                  marginTop: 12,
-                }}
-              >{`<script
-  src="https://hgtts.onrender.com/static/tts-widget.v1.js"
-  data-ail-api-base="https://hgtts.onrender.com"
-  data-ail-tenant="demo"
-  defer
-></script>
-<button data-ail-listen>Listen</button>`}</pre>
-            </details>
-          </div>
-        </section>
-
         {/* PRICING */}
         <section id="pricing" className="ea-section">
           <div className="ea-pricing-shell">
@@ -181,6 +125,62 @@ export default function Page() {
                 </ul>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="ea-section">
+          <div className="ea-section-header">
+            <h2 className="ea-section-title">Why Publishers Use EasyAudio</h2>
+          </div>
+          <ul className="ea-plan-features ea-why-list">
+            <li>A Listen button on every article with one script</li>
+            <li>Automatic text extraction and high-quality narration</li>
+            <li>Pay once per article, not per listen</li>
+            <li>Works on mobile and desktop. No extensions or installs required</li>
+            <li>Inline player that automatically matches your brand</li>
+            <li>Zero maintenance for your team</li>
+          </ul>
+        </section>
+
+        {/* INSTALL */}
+        <section id="install" className="ea-section">
+          <div className="ea-section-header">
+            <h2 className="ea-section-title">Install in 30 Seconds</h2>
+            <p className="ea-section-subtitle">
+              EasyAudio installs with a single HTML snippet added to your article template. Prefer
+              someone else to wire it up? We&apos;ll set it up for you for free.
+            </p>
+          </div>
+
+          <div className="ea-install-card">
+            <a
+              className="ea-plan-cta"
+              href="mailto:hello@easyaudio.dev?subject=EasyAudio%20Setup"
+            >
+              Get Free Installation
+            </a>
+            <details style={{ marginTop: 16 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Developer snippet</summary>
+              <pre
+                style={{
+                  overflowX: "auto",
+                  padding: "10px 12px",
+                  background: "#1a1c1a",
+                  color: "#f3dfc1",
+                  border: "2px solid #e0c9a6",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
+                  marginTop: 12,
+                }}
+              >{`<script
+  src="https://hgtts.onrender.com/static/tts-widget.v1.js"
+  data-ail-api-base="https://hgtts.onrender.com"
+  data-ail-tenant="demo"
+  defer
+></script>
+<button data-ail-listen>Listen</button>`}</pre>
+            </details>
           </div>
         </section>
         </div>
