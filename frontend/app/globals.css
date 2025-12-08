@@ -323,9 +323,9 @@
   padding: 18px 16px 20px;
   background-color: var(--ea-card);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
-  text-align: center;
   flex: 1 1 260px;
-  max-width: 330px;
+  max-width: 360px;
+  text-align: center;
 }
 
 .ea-plan--highlight {
@@ -407,13 +407,8 @@
   display: inline-block;
 }
 
-.ea-why-list {
-  margin: 0 auto;
-  text-align: left;
-}
-
 .ea-pricing-shell {
-  max-width: 1100px;
+  max-width: 1250px;
   margin: 0 auto;
   text-align: center;
 }
@@ -422,6 +417,37 @@
   display: block;
   text-align: left;
   margin-top: 16px;
+}
+
+.ea-why-table {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.ea-why-card {
+  border: 2px solid var(--ea-border);
+  background-color: var(--ea-card);
+  padding: 16px;
+  text-align: left;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.06);
+}
+
+.ea-why-card strong {
+  display: block;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.ea-why-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ea-ink-soft);
 }
 
 .ea-plan-features li {
