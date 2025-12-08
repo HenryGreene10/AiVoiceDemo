@@ -44,7 +44,7 @@ export default function Page() {
                 Listen
               </button>
 
-              <div data-ail-body>
+                <div className="ea-article-body" data-ail-body>
                 <p>
                   Readers love audio versions of articles. They spend more time on your site, remain engaged
                   longer, and share articles more frequently when they can listen instead while they read.

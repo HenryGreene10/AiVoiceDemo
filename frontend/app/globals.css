@@ -210,6 +210,7 @@
   background-color: var(--ea-card);
   padding: 22px 20px 24px;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+  text-align: center;
 }
 
 .ea-demo-article h2 {
@@ -228,6 +229,11 @@
   line-height: 1.6;
   font-weight: 500;
   color: var(--ea-ink-soft);
+}
+
+.ea-article-body {
+  text-align: left;
+  margin-top: 16px;
 }
 
 
@@ -319,6 +325,7 @@
   padding: 18px 16px 20px;
   background-color: var(--ea-card);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+  text-align: center;
 }
 
 .ea-plan--highlight {
@@ -396,6 +403,8 @@
   font-weight: 500;
   line-height: 1.6;
   color: var(--ea-ink-soft);
+  text-align: left;
+  display: inline-block;
 }
 
 .ea-plan-features li {
