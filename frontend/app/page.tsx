@@ -78,9 +78,15 @@ export default function Page() {
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$0</span>
                 </div>
-                <a href="#install" className="ea-plan-cta">
+                <button
+                  type="button"
+                  className="ea-plan-cta"
+                  data-tally-open="XxLqkV"
+                  data-tally-emoji-text="👋"
+                  data-tally-emoji-animation="wave"
+                >
                   Get Access
-                </a>
+                </button>
                 <ul className="ea-plan-features">
                   <li>Up to 10 article renders</li>
                   <li>EasyAudio mini-player on one site</li>
@@ -95,9 +101,15 @@ export default function Page() {
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$9</span>/month
                 </div>
-                <a href="#install" className="ea-plan-cta">
+                <button
+                  type="button"
+                  className="ea-plan-cta"
+                  data-tally-open="XxLqkV"
+                  data-tally-emoji-text="👋"
+                  data-tally-emoji-animation="wave"
+                >
                   Get Access
-                </a>
+                </button>
                 <ul className="ea-plan-features">
                   <li>Up to 100 article renders / month</li>
                   <li>EasyAudio mini-player on one site</li>
@@ -112,9 +124,15 @@ export default function Page() {
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$29</span>/month
                 </div>
-                <a href="#install" className="ea-plan-cta">
+                <button
+                  type="button"
+                  className="ea-plan-cta"
+                  data-tally-open="XxLqkV"
+                  data-tally-emoji-text="👋"
+                  data-tally-emoji-animation="wave"
+                >
                   Get Access
-                </a>
+                </button>
                 <ul className="ea-plan-features">
                   <li>Up to 500 article renders / month</li>
                   <li>Mini-player on up to 3 sites</li>
