@@ -285,6 +285,10 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
   function bindMini(audio, meta){
     const wrap = ensureMini();
     const q = id => wrap.querySelector(id);
+    if (audio.__ailStartDelay) {
+      clearTimeout(audio.__ailStartDelay);
+      audio.__ailStartDelay = null;
+    }
 
     // --- Remember/restore position
     const pos = makePosStore(audio, meta);
@@ -342,7 +346,12 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
     if (metaUrl) {
       const lastSrc = audio.dataset?.ailLastSrc || '';
-      if (lastSrc !== metaUrl) {
+      const isNewSource = lastSrc !== metaUrl;
+      if (isNewSource) {
+        if (audio.__ailStartDelay) {
+          clearTimeout(audio.__ailStartDelay);
+          audio.__ailStartDelay = null;
+        }
         try { audio.pause(); } catch {}
         try {
           audio.removeAttribute('src');
@@ -353,17 +362,28 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
         audio.preload = 'auto';
         audio.load();
       }
-      const beginPlayback = () => {
+      const playImmediate = () => {
         audio.play().catch(() => {});
       };
+      const playWithDelay = () => {
+        clearTimeout(audio.__ailStartDelay);
+        audio.__ailStartDelay = window.setTimeout(() => {
+          try { audio.currentTime = 0; } catch {}
+          playImmediate();
+        }, 1000); // buffer a beat to avoid clipping the first word
+      };
+      const handleReady = () => {
+        audio.removeEventListener('canplay', handleReady);
+        if (isNewSource) {
+          playWithDelay();
+        } else {
+          playImmediate();
+        }
+      };
       if (audio.readyState >= 2) {
-        beginPlayback();
+        handleReady();
       } else {
-        const onReady = () => {
-          audio.removeEventListener('canplay', onReady);
-          beginPlayback();
-        };
-        audio.addEventListener('canplay', onReady, { once: true });
+        audio.addEventListener('canplay', handleReady);
       }
     }
 
@@ -475,6 +495,10 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     function closePlayer(){
       try{ pos.save(); }catch{}
       try{ audio.pause(); }catch{}
+      if (audio.__ailStartDelay) {
+        clearTimeout(audio.__ailStartDelay);
+        audio.__ailStartDelay = null;
+      }
       wrap.classList.remove('show');
       document.getElementById('ai-overlay')?.classList.remove('show');
       stopFabObserver();       // stop watching

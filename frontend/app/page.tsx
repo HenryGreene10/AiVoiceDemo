@@ -30,106 +30,98 @@ export default function Page() {
         <section id="demo" className="ea-section">
           <div className="ea-demo-article-wrap">
             <article className="ea-demo-article" id="ea-demo-article" data-ail-article>
-              <header className="ea-article-header">
-                <h1 data-ail-title>Why EasyAudio Makes Your Articles Easier to Finish</h1>
-                <p className="ea-article-meta" data-ail-author>
-                  By Henry Greene
-                </p>
-                <button
-                  id="ail-listen-btn"
-                  className="ea-listen-button listen-btn ail-listen"
-                  data-ail-listen="true"
-                  type="button"
-                >
-                  Listen
-                </button>
-              </header>
+              <h1 data-ail-title>Why EasyAudio Makes Your Articles Easier to Finish</h1>
+              <p className="ea-article-meta" data-ail-author>
+                By Henry Greene
+              </p>
+              <button
+                id="ail-listen-btn"
+                className="ea-listen-button listen-btn ail-listen"
+                data-ail-listen="true"
+                type="button"
+              >
+                Listen
+              </button>
 
               <div data-ail-body>
-                <h2>Give Every Article a Voice</h2>
                 <p>
-                  EasyAudio is a lightweight widget that adds a Listen button and a calm mini player
-                  to every story you choose. It turns your writing into a clear, natural listening
-                  experience so readers can stay with your work even when they can&apos;t sit and read.
-                </p>
-
-                <h2>Help Readers Stay Connected With Your Work</h2>
-                <p>
-                  EasyAudio gives your audience a high-quality audio version of your writing so they
-                  can stay engaged in moments when reading is not convenient. A natural and expressive
-                  voice helps your ideas land more clearly and encourages readers to finish more of
-                  what you share.
+                  Most blogs have dozens, hundreds, or even thousands of articles. They could
+                  regenerate audio files, upload MP3s, place audio blocks manually, and redo
+                  everything when an article changes. But why would they?
                 </p>
                 <p>
-                  It enhances the overall experience of your content and helps people stay connected
-                  to your work in a way that feels simple and intuitive.
-                </p>
-
-                <h2>Audio for Any Article You Choose</h2>
-                <p>
-                  Whether you publish essays, newsletters, research notes or community updates,
-                  EasyAudio adds a polished listening option right when the article goes live.
-                  There is nothing extra for you to produce. You simply write, and your readers
-                  can choose to listen.
+                  EasyAudio gives them the hands-free version. With a single script added to your
+                  article template, every post on your site becomes playable. A Listen button appears
+                  under the title, we extract the text, generate the narration, and cache it. If you
+                  update the article, the audio updates automatically and your readers just hit play.
                 </p>
                 <p>
-                  Under the hood it is a small, lightweight widget. In practice it feels like an
-                  extra path into your work: a natural voice, attached to any article you care about,
-                  that quietly helps readers stay with you from start to finish.
+                  There are no extra steps in your publishing flow, no exporting or uploading audio
+                  files, and no one on your team needs to learn ElevenLabs. It simply runs in the
+                  background and keeps your articles listenable at scale.
                 </p>
               </div>
             </article>
           </div>
         </section>
 
+        <section className="ea-section">
+          <div className="ea-section-header">
+            <h2 className="ea-section-title">Why Publishers Use EasyAudio</h2>
+            <p className="ea-section-subtitle">
+              Readers don&apos;t pay for raw TTS. They pay for automation, embedding, branding, and a
+              listening experience that requires zero maintenance from the newsroom.
+            </p>
+          </div>
+          <ul className="ea-plan-features">
+            <li>A Listen button on every article with one script</li>
+            <li>Automatic text extraction, narration, and caching</li>
+            <li>Pay once per article playback thanks to caching</li>
+            <li>Works on mobile and desktop — no extensions or installs</li>
+            <li>Inline player that matches your brand</li>
+            <li>Zero maintenance for your team</li>
+          </ul>
+        </section>
+
         {/* INSTALL */}
         <section id="install" className="ea-section">
           <div className="ea-section-header">
-            <h2 className="ea-section-title">Install in One Script Tag</h2>
+            <h2 className="ea-section-title">Install in 30 Seconds</h2>
             <p className="ea-section-subtitle">
-              Add EasyAudio to any article template with a simple three-line HTML embed.
+              EasyAudio installs with a single HTML snippet added to your article template. Prefer
+              someone else to wire it up? We&apos;ll set it up for you for free.
             </p>
           </div>
 
           <div className="ea-install-card">
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                marginTop: 0,
-                marginBottom: 8,
-              }}
+            <a
+              className="ea-plan-cta"
+              href="mailto:hello@easyaudio.dev?subject=EasyAudio%20Setup"
             >
-              Example snippet:
-            </p>
-            <pre
-              style={{
-                overflowX: "auto",
-                padding: "10px 12px",
-                background: "#1a1c1a",
-                color: "#f3dfc1",
-                border: "2px solid #e0c9a6",
-                fontSize: 12,
-                lineHeight: 1.5,
-                boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
-              }}
-            >{`<script
-  src="https://hgtts.onrender.com/static/tts-widget.v1.js"
-  data-ail-api-base="https://hgtts.onrender.com"
-  data-ail-tenant="YOUR_TENANT_ID"
+              Get Free Installation
+            </a>
+            <details style={{ marginTop: 16 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Developer snippet</summary>
+              <pre
+                style={{
+                  overflowX: "auto",
+                  padding: "10px 12px",
+                  background: "#1a1c1a",
+                  color: "#f3dfc1",
+                  border: "2px solid #e0c9a6",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
+                  marginTop: 12,
+                }}
+              >{`<script
+  src="https://YOUR_RENDER_DOMAIN/static/tts-widget.v1.js"
+  data-ail-api-base="https://YOUR_RENDER_DOMAIN"
+  data-ail-tenant="demo"
   defer
-></script>`}</pre>
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: "#4b3f2f",
-                marginTop: 10,
-              }}
-            >
-              Each customer would use their own <code>data-ail-tenant</code> so caching and billing
-              stay tidy per site.
-            </p>
+></script>
+<button data-ail-listen>Listen</button>`}</pre>
+            </details>
           </div>
         </section>
 

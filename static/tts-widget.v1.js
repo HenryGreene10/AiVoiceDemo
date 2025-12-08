@@ -263,9 +263,9 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   const ARTICLE_HINT_SELECTORS = [
     "[data-ail-article]",
     "article",
-    "main",
     '[itemtype*="Article"]',
-    '[itemtype*="article"]'
+    '[itemtype*="article"]',
+    "main"
   ];
   const NOISE_CLASS_RE = /(nav|menu|footer|header|sidebar|aside|promo|banner|share|social|related|newsletter)/i;
   const NOISE_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "FORM"]);
