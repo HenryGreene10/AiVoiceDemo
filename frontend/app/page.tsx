@@ -71,7 +71,7 @@ export default function Page() {
               <h2 className="ea-section-title">Simple Pricing for a Simple Player</h2>
             </div>
 
-            <div className="ea-pricing-row">
+            <div className="ea-plan-row">
               <div className="ea-plan">
                 <div className="ea-plan-name ea-pricing-plan-title">Free Trial</div>
                 <div className="ea-plan-desc">Try a week free!</div>
@@ -88,9 +88,7 @@ export default function Page() {
                   <li>Email support</li>
                 </ul>
               </div>
-            </div>
 
-            <div className="ea-pricing-row">
               <div className="ea-plan">
                 <div className="ea-plan-name ea-pricing-plan-title">Starter</div>
                 <div className="ea-plan-desc">For personal blogs &amp; small newsletters.</div>
