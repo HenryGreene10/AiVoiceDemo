@@ -1,4 +1,5 @@
 # main.py
+import logging
 import os, hashlib, requests, time, httpx
 from pathlib import Path
 from collections import OrderedDict
@@ -20,7 +21,10 @@ import re
 from fastapi.staticfiles import StaticFiles
 import csv
 from threading import Lock
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
+from app.config.tenants import TENANTS, TENANT_USAGE
+
+logger = logging.getLogger("easyaudio")
 
 # --- tenant key authentication ---
 TENANT_KEYS = set(s.strip() for s in os.getenv("TENANT_KEYS","").split(",") if s.strip())
@@ -65,6 +69,52 @@ def rate_limit_check(request: Request):
     ok_tenant = _allow(_tenant_hits, tenant, *RATE_LIMITS["per_tenant"])
     if not (ok_ip and ok_tenant):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry later.")
+
+
+def get_tenant_id(request: Request) -> str:
+    """Resolve tenant from request headers with a safe fallback."""
+    tenant_id = request.headers.get("x-tenant-key")
+
+    if not tenant_id:
+        tenant_id = "demo"
+        logger.warning("[tenant] Missing x-tenant-key header, defaulting to 'demo'")
+
+    if tenant_id not in TENANTS:
+        logger.warning(f"[tenant] Unknown tenant: {tenant_id}")
+        raise HTTPException(status_code=403, detail="Unknown tenant")
+
+    return tenant_id
+
+
+def check_and_increment_quota(tenant_id: str) -> None:
+    """Increment per-tenant quota counters for cache misses."""
+    today = date.today().isoformat()
+    cfg = TENANTS.get(tenant_id)
+    if not cfg:
+        raise HTTPException(status_code=403, detail="Unknown tenant")
+
+    max_renders = cfg.get("max_renders_per_day")
+    if max_renders is None:
+        # unlimited tenants are trusted internal/testing customers
+        logger.info(f"[tenant] {tenant_id} has no max_renders_per_day; skipping quota check")
+        return
+
+    usage = TENANT_USAGE.get(tenant_id)
+    if not usage or usage.get("date") != today:
+        usage = {"date": today, "count": 0}
+
+    if usage["count"] >= max_renders:
+        logger.warning(
+            f"[tenant] quota exceeded for {tenant_id}: "
+            f"{usage['count']} >= {max_renders} on {today}"
+        )
+        raise HTTPException(status_code=429, detail="Daily render quota exceeded")
+
+    usage["count"] += 1
+    TENANT_USAGE[tenant_id] = usage
+    logger.info(
+        f"[tenant] {tenant_id} render #{usage['count']} / {max_renders} on {today}"
+    )
 #from src.metrics import write_stream_row
 #try:
 #    from src.prosody import prepare_article
@@ -106,7 +156,7 @@ class TenantConfig:
     model_id: str | None = None
 
 DEFAULT_TENANT_VOICE = (VOICE_ID or os.getenv("ELEVENLABS_VOICE", "").strip() or "21m00Tcm4TlvDq8ikWAM")
-TENANTS: dict[str, TenantConfig] = {
+VOICE_TENANTS: dict[str, TenantConfig] = {
     "default": TenantConfig(voice_id=DEFAULT_TENANT_VOICE),
     "demo-blog": TenantConfig(
         voice_id=os.getenv("DEMO_BLOG_VOICE", DEFAULT_TENANT_VOICE)
@@ -645,13 +695,25 @@ async def tts_get(
 ):
     await require_tenant(request)
     rate_limit_check(request)
+    tenant_id = get_tenant_id(request)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
-    return stream_with_cache(text, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
+    return stream_with_cache(
+        text,
+        v,
+        model or MODEL_ID,
+        stability,
+        similarity,
+        style,
+        speaker_boost,
+        opt_latency,
+        tenant_id=tenant_id,
+    )
 
 @app.post("/tts")
 def tts_post(
+    request: Request,
     body: TTSBody,
     voice: str | None = Query(None),
     model: str | None = Query(None),
@@ -661,10 +723,21 @@ def tts_post(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
+    tenant_id = get_tenant_id(request)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
-    return stream_with_cache(body.text, v, model or MODEL_ID, stability, similarity, style, speaker_boost, opt_latency)
+    return stream_with_cache(
+        body.text,
+        v,
+        model or MODEL_ID,
+        stability,
+        similarity,
+        style,
+        speaker_boost,
+        opt_latency,
+        tenant_id=tenant_id,
+    )
 
 from src.prosody import prepare_article
 
@@ -682,6 +755,7 @@ async def api_tts(
 ):
     await require_tenant(request)
     rate_limit_check(request)
+    tenant_id = get_tenant_id(request)
 
     v = (voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
     if not v:
@@ -705,6 +779,7 @@ async def api_tts(
         if outp.exists() and outp.stat().st_size > 0:
             return {"audioUrl": public_url(f"/cache/{outp.name}"), "hit": True}
 
+        check_and_increment_quota(tenant_id)
         try:
             data = await tts_bytes(clean, v, (model or MODEL_ID))
         except Exception as e:
@@ -936,7 +1011,8 @@ def enforce_cache_budget(max_bytes=MAX_CACHE_BYTES, max_files=MAX_CACHE_FILES):
 
 def stream_with_cache(text: str, voice: str, model: str,
                       stability: float, similarity: float, style: float,
-                      speaker_boost: bool, opt_latency: int):
+                      speaker_boost: bool, opt_latency: int,
+                      tenant_id: str | None = None):
     """
     Streams TTS audio from ElevenLabs, with:
       - preflight status check (no streaming starts if upstream is an error)
@@ -955,6 +1031,8 @@ def stream_with_cache(text: str, voice: str, model: str,
         return FileResponse(path, media_type="audio/mpeg", headers={"X-Cache": "HIT"})
 
     metrics["tts_cache_misses"] += 1
+    if tenant_id:
+        check_and_increment_quota(tenant_id)
 
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
     headers = {
@@ -1097,6 +1175,7 @@ async def ensure_article_cached(
         if path.exists() and path.stat().st_size > 0:
             print({"event": "article_cache_hit", "hash": h})
             return f"/cache/{path.name}", True, h
+        check_and_increment_quota(tenant_key)
         try:
             data = await tts_bytes(clean, voice, model)
         except Exception as e:
@@ -1151,7 +1230,8 @@ def precache_status(text: str, voice: Optional[str] = None):
 
 def stream_with_cache(text: str, voice: str, model: str,
                       stability: float, similarity: float, style: float,
-                      speaker_boost: bool, opt_latency: int):
+                      speaker_boost: bool, opt_latency: int,
+                      tenant_id: str | None = None):
     metrics["tts_requests"] += 1
     clean = preprocess_for_tts(text)
 
@@ -1163,6 +1243,8 @@ def stream_with_cache(text: str, voice: str, model: str,
         return FileResponse(path, media_type="audio/mpeg", headers={"X-Cache": "HIT"})
 
     metrics["tts_cache_misses"] += 1
+    if tenant_id:
+        check_and_increment_quota(tenant_id)
 
     # ----- preflight (no bytes sent to client yet)
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
@@ -1284,6 +1366,15 @@ def get_metrics():
         "cache_bytes_gb": cache["bytes_gb"],
     }
 
+
+@app.get("/tenants/stats")
+def tenants_stats():
+    """Expose current tenant quota config + usage for debugging."""
+    return {
+        "tenants": TENANTS,
+        "usage": TENANT_USAGE,
+    }
+
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
 async def tts(req: TTSRequest, request: Request):
@@ -1298,6 +1389,7 @@ async def tts(req: TTSRequest, request: Request):
 # --- TTS GET for direct <audio src>
 @app.get("/tts")
 def tts(
+    request: Request,
     text: str = Query(..., max_length=20000),
     voice: str | None = Query(None),
     model: str = Query("eleven_turbo_v2"),
@@ -1307,10 +1399,21 @@ def tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
+    tenant_id = get_tenant_id(request)
     voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE not set).")
-    return stream_with_cache(text, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+    return stream_with_cache(
+        text,
+        voice,
+        model,
+        stability,
+        similarity,
+        style,
+        speaker_boost,
+        opt_latency,
+        tenant_id=tenant_id,
+    )
 
 @app.get("/favicon.ico")
 def _favicon():
@@ -1473,8 +1576,8 @@ class ArticleAudioResponse(BaseModel):
 # POST the same text twice → first call MISS, second HIT, same audio_url/hash.
 @app.post("/api/article-audio", response_model=ArticleAudioResponse)
 async def article_audio(req: ArticleAudioRequest, request: Request):
-    tenant_key = (request.headers.get("x-tenant-key") or "default").strip() or "default"
-    tenant_cfg = TENANTS.get(tenant_key) or TENANTS.get("default")
+    tenant_id = get_tenant_id(request)
+    tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
 
     raw_text = (req.text or "").strip()
 
@@ -1487,8 +1590,8 @@ async def article_audio(req: ArticleAudioRequest, request: Request):
         raise HTTPException(status_code=400, detail="Must provide url or text")
 
     canonical = preprocess_for_tts(raw_text)
-    audio_url, was_cached, hash_value = await ensure_article_cached(canonical, tenant_cfg, tenant_key)
-    return ArticleAudioResponse(audio_url=audio_url, cached=was_cached, hash=hash_value, tenant=tenant_key)
+    audio_url, was_cached, hash_value = await ensure_article_cached(canonical, tenant_cfg, tenant_id)
+    return ArticleAudioResponse(audio_url=audio_url, cached=was_cached, hash=hash_value, tenant=tenant_id)
 
 # --- read
 class ReadRequest(BaseModel):

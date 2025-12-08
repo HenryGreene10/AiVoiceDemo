@@ -260,6 +260,133 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     });
   }
 
+  const ARTICLE_HINT_SELECTORS = [
+    "[data-ail-article]",
+    "article",
+    "main",
+    '[itemtype*="Article"]',
+    '[itemtype*="article"]'
+  ];
+  const NOISE_CLASS_RE = /(nav|menu|footer|header|sidebar|aside|promo|banner|share|social|related|newsletter)/i;
+  const NOISE_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "FORM"]);
+  const FALLBACK_TAGS = new Set(["section", "div", "article", "main"]);
+  const SKIP_CONTAINER_SELECTOR = "nav,header,footer,aside,form,button,input,textarea,select";
+  const BODY_TAG_SELECTOR = "p,li,blockquote";
+  const MIN_ARTICLE_TEXT = 300;
+
+  function cleanNodeText(node) {
+    return (node?.innerText || node?.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function textLength(node) {
+    return cleanNodeText(node).length;
+  }
+
+  function isNoiseContainer(node) {
+    if (!node || !node.tagName) return false;
+    if (NOISE_TAGS.has(node.tagName.toUpperCase())) return true;
+    const haystack = `${node.className || ""} ${node.id || ""}`.toLowerCase();
+    return NOISE_CLASS_RE.test(haystack);
+  }
+
+  function findArticleContainer(listenButton) {
+    if (listenButton) {
+      for (const sel of ARTICLE_HINT_SELECTORS) {
+        const match = listenButton.closest(sel);
+        if (match) return match;
+      }
+    }
+
+    for (const sel of ARTICLE_HINT_SELECTORS) {
+      const match = document.querySelector(sel);
+      if (match) return match;
+    }
+
+    if (listenButton) {
+      let current = listenButton.parentElement;
+      while (current && current !== document.body) {
+        if (isNoiseContainer(current)) {
+          current = current.parentElement;
+          continue;
+        }
+        const tag = (current.tagName || "").toLowerCase();
+        if (FALLBACK_TAGS.has(tag) && textLength(current) >= MIN_ARTICLE_TEXT) {
+          return current;
+        }
+        current = current.parentElement;
+      }
+    }
+    return document.body;
+  }
+
+  function shouldSkipNode(node) {
+    if (!node) return true;
+    if (node.closest(SKIP_CONTAINER_SELECTOR)) return true;
+    return isNoiseContainer(node);
+  }
+
+  function pickTitleFromArticle(articleEl) {
+    if (!articleEl) return "";
+    const titleNode =
+      articleEl.querySelector("[data-ail-title]") ||
+      articleEl.querySelector("h1") ||
+      articleEl.querySelector("h2");
+    return cleanNodeText(titleNode);
+  }
+
+  function pickAuthorFromArticle(articleEl) {
+    if (!articleEl) return "";
+    const explicit =
+      articleEl.querySelector("[data-ail-author]") ||
+      articleEl.querySelector("[itemprop='author']") ||
+      articleEl.querySelector("[rel='author']");
+    if (explicit) {
+      return cleanNodeText(explicit).replace(/^by\s*/i, "");
+    }
+    const fallback = Array.from(articleEl.querySelectorAll("*")).find((node) => {
+      const haystack = `${node.className || ""} ${node.id || ""}`.toLowerCase();
+      if (!haystack) return false;
+      return haystack.includes("author") || haystack.includes("byline");
+    });
+    return cleanNodeText(fallback).replace(/^by\s*/i, "");
+  }
+
+  function collectBodyText(articleEl) {
+    if (!articleEl) return "";
+    const scoped = articleEl.querySelector("[data-ail-body]") || articleEl;
+    const blocks = [];
+    scoped.querySelectorAll(BODY_TAG_SELECTOR).forEach((node) => {
+      if (shouldSkipNode(node)) return;
+      const text = cleanNodeText(node);
+      if (text) blocks.push(text);
+    });
+    if (blocks.length) {
+      return stripLeadingByLines(blocks.join("\n\n")).trim();
+    }
+    const fallback = cleanNodeText(scoped);
+    return stripLeadingByLines(fallback);
+  }
+
+  function extractArticleParts(listenButton) {
+    const container = findArticleContainer(listenButton);
+    if (!container) {
+      return { title: "", author: "", bodyText: "", fullText: "" };
+    }
+    const title = pickTitleFromArticle(container);
+    const author = pickAuthorFromArticle(container);
+    const bodyText = collectBodyText(container).trim();
+    const parts = [];
+    if (title) parts.push(title);
+    if (author) parts.push(`By ${author}`);
+    if (bodyText) parts.push(bodyText);
+    return {
+      title,
+      author,
+      bodyText,
+      fullText: parts.join("\n\n").trim()
+    };
+  }
+
 
 
 
@@ -292,11 +419,29 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
             const srcBase = (scriptEl && scriptEl.src) || location.href;
             await ensureMiniLoaded(srcBase);
 
-            const { plain, title, subtitle } = buildNarration(selector);
-            const spoken = normalizeNumbers(plain);
-            const pageTitle = title || document.querySelector("h1")?.innerText?.trim() || document.title || "AI Listen";
-            const subtitleText = subtitle || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
             const pageUrl = window.location.href;
+            const extracted = extractArticleParts(btn);
+            let finalText = extracted.fullText;
+            let pageTitle =
+              extracted.title ||
+              getTitle() ||
+              document.querySelector("h1")?.innerText?.trim() ||
+              document.title ||
+              "EasyAudio";
+            let subtitleText = getSubtitle() || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
+
+            if (!finalText) {
+              console.warn("[EasyAudio] Could not extract article; falling back to legacy narration");
+              const fallback = buildNarration(selector);
+              finalText = fallback.plain;
+              pageTitle = fallback.title || pageTitle;
+              subtitleText = fallback.subtitle || subtitleText;
+            }
+
+            const spoken = normalizeNumbers(finalText || "").trim();
+            if (!spoken) {
+              throw new Error("Unable to extract readable article text.");
+            }
 
             const payload = {
               url: pageUrl,

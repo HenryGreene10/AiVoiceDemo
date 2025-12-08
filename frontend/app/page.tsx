@@ -31,8 +31,10 @@ export default function Page() {
           <div className="ea-demo-article-wrap">
             <article className="ea-demo-article" id="ea-demo-article" data-ail-article>
               <header className="ea-article-header">
-                <h2>Why EasyAudio?</h2>
-                <p className="ea-article-meta">by Henry G.</p>
+                <h1 data-ail-title>Why EasyAudio Makes Your Articles Easier to Finish</h1>
+                <p className="ea-article-meta" data-ail-author>
+                  By Henry Greene
+                </p>
                 <button
                   id="ail-listen-btn"
                   className="ea-listen-button listen-btn ail-listen"
@@ -43,37 +45,39 @@ export default function Page() {
                 </button>
               </header>
 
-              <h2>Give Every Article a Voice</h2>
-              <p>
-                EasyAudio is a lightweight widget that adds a Listen button and a calm mini player
-                to every story you choose. It turns your writing into a clear, natural listening
-                experience so readers can stay with your work even when they can&apos;t sit and read.
-              </p>
+              <div data-ail-body>
+                <h2>Give Every Article a Voice</h2>
+                <p>
+                  EasyAudio is a lightweight widget that adds a Listen button and a calm mini player
+                  to every story you choose. It turns your writing into a clear, natural listening
+                  experience so readers can stay with your work even when they can&apos;t sit and read.
+                </p>
 
-              <h2>Help Readers Stay Connected With Your Work</h2>
-              <p>
-                EasyAudio gives your audience a high-quality audio version of your writing so they
-                can stay engaged in moments when reading is not convenient. A natural and expressive
-                voice helps your ideas land more clearly and encourages readers to finish more of
-                what you share.
-              </p>
-              <p>
-                It enhances the overall experience of your content and helps people stay connected
-                to your work in a way that feels simple and intuitive.
-              </p>
+                <h2>Help Readers Stay Connected With Your Work</h2>
+                <p>
+                  EasyAudio gives your audience a high-quality audio version of your writing so they
+                  can stay engaged in moments when reading is not convenient. A natural and expressive
+                  voice helps your ideas land more clearly and encourages readers to finish more of
+                  what you share.
+                </p>
+                <p>
+                  It enhances the overall experience of your content and helps people stay connected
+                  to your work in a way that feels simple and intuitive.
+                </p>
 
-              <h2>Audio for Any Article You Choose</h2>
-              <p>
-                Whether you publish essays, newsletters, research notes or community updates,
-                EasyAudio adds a polished listening option right when the article goes live.
-                There is nothing extra for you to produce. You simply write, and your readers
-                can choose to listen.
-              </p>
-              <p>
-                Under the hood it is a small, lightweight widget. In practice it feels like an
-                extra path into your work: a natural voice, attached to any article you care about,
-                that quietly helps readers stay with you from start to finish.
-              </p>
+                <h2>Audio for Any Article You Choose</h2>
+                <p>
+                  Whether you publish essays, newsletters, research notes or community updates,
+                  EasyAudio adds a polished listening option right when the article goes live.
+                  There is nothing extra for you to produce. You simply write, and your readers
+                  can choose to listen.
+                </p>
+                <p>
+                  Under the hood it is a small, lightweight widget. In practice it feels like an
+                  extra path into your work: a natural voice, attached to any article you care about,
+                  that quietly helps readers stay with you from start to finish.
+                </p>
+              </div>
             </article>
           </div>
         </section>
