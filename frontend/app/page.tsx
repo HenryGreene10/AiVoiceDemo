@@ -19,7 +19,8 @@ export default function Page() {
       </header>
 
       <main className="ea-shell">
-        {/* HERO */}
+        <div className="ea-page-inner">
+          {/* HERO */}
         <section className="ea-hero">
           <div className="ea-card ea-hero-card">
             <h1 className="ea-hero-title">Turn Any Article Into a High-Quality Listening Experience</h1>
@@ -182,7 +183,7 @@ export default function Page() {
             </div>
           </div>
         </section>
-
+        </div>
       </main>
 
       <footer className="ea-footer">
