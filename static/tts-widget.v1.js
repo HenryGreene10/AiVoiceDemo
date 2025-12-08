@@ -260,6 +260,10 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     });
   }
 
+  function getExplicitArticles() {
+    return Array.from(document.querySelectorAll("[data-ail-article]"));
+  }
+
   const ARTICLE_HINT_SELECTORS = [
     "[data-ail-article]",
     "article",
@@ -290,11 +294,20 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   function findExplicitArticle(listenButton) {
-    if (!listenButton) return null;
-    const container = listenButton.closest("[data-ail-article]");
-    if (container) return container;
-    const all = document.querySelectorAll("[data-ail-article]");
-    if (all.length === 1) return all[0];
+    const articles = getExplicitArticles();
+    if (!listenButton && articles.length === 1) {
+      return articles[0];
+    }
+
+    if (listenButton) {
+      const fromButton = listenButton.closest("[data-ail-article]");
+      if (fromButton) return fromButton;
+    }
+
+    if (articles.length === 1) {
+      return articles[0];
+    }
+
     return null;
   }
 
@@ -302,38 +315,20 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     const explicit = findExplicitArticle(listenButton);
     if (explicit) return explicit;
 
-    const hasAnyExplicit = document.querySelector("[data-ail-article]");
-    if (!explicit && hasAnyExplicit) {
+    const explicitList = getExplicitArticles();
+    if (explicitList.length > 0) {
       return null;
     }
 
     if (listenButton) {
-      for (const sel of ARTICLE_HINT_SELECTORS) {
-        const match = listenButton.closest(sel);
-        if (match) return match;
-      }
+      const local = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
+      if (local) return local;
     }
 
-    for (const sel of ARTICLE_HINT_SELECTORS) {
-      const match = document.querySelector(sel);
-      if (match) return match;
-    }
+    const global = document.querySelector("article,[itemtype*='Article'],[role='main'],main");
+    if (global) return global;
 
-    if (listenButton) {
-      let current = listenButton.parentElement;
-      while (current && current !== document.body) {
-        if (isNoiseContainer(current)) {
-          current = current.parentElement;
-          continue;
-        }
-        const tag = (current.tagName || "").toLowerCase();
-        if (FALLBACK_TAGS.has(tag) && textLength(current) >= MIN_ARTICLE_TEXT) {
-          return current;
-        }
-        current = current.parentElement;
-      }
-    }
-    return document.body;
+    return null;
   }
 
   function shouldSkipNode(node) {
@@ -385,17 +380,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   }
 
   function extractArticleParts(listenButton) {
-    let container = findExplicitArticle(listenButton);
-
-    if (!container) {
-      const hasAnyExplicit = document.querySelector("[data-ail-article]");
-      if (!hasAnyExplicit) {
-        container =
-          listenButton?.closest("article,[itemtype*='Article'],main") ||
-          document.querySelector("article,[itemtype*='Article'],main");
-      }
-    }
-
+    const container = findArticleContainer(listenButton);
     if (!container) {
       console.warn("[EasyAudio] No article container found for Listen button");
       return { title: "", author: "", bodyText: "", fullText: "" };
@@ -408,11 +393,25 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     if (title) parts.push(title);
     if (author) parts.push(`By ${author}`);
     if (bodyText) parts.push(bodyText);
+    const fullText = parts.join("\n\n").trim();
+
+    if (!fullText || fullText.length < 20) {
+      console.warn("[EasyAudio] Extracted article text is very short or empty", {
+        hasExplicit: getExplicitArticles().length > 0,
+        container
+      });
+    } else {
+      console.log("[EasyAudio] Using article container", {
+        hasExplicit: getExplicitArticles().length > 0,
+        snippet: fullText.slice(0, 120)
+      });
+    }
+
     return {
       title,
       author,
       bodyText,
-      fullText: parts.join("\n\n").trim()
+      fullText
     };
   }
 
@@ -450,7 +449,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
             const pageUrl = window.location.href;
             const extracted = extractArticleParts(btn);
-            let finalText = extracted.fullText;
+            let finalText = normalizeNumbers(extracted.fullText || "").trim();
             let pageTitle =
               extracted.title ||
               getTitle() ||
@@ -459,18 +458,15 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
               "EasyAudio";
             let subtitleText = getSubtitle() || document.querySelector(".dek, .subtitle")?.innerText?.trim() || "";
 
-            if (!finalText) {
-              console.warn("[EasyAudio] Could not extract article; falling back to legacy narration");
-              const fallback = buildNarration(selector);
-              finalText = fallback.plain;
-              pageTitle = fallback.title || pageTitle;
-              subtitleText = fallback.subtitle || subtitleText;
+            const hasExplicit = getExplicitArticles().length > 0;
+            if (!finalText || finalText.length < 20) {
+              console.warn("[EasyAudio] finalText empty/short; not falling back to legacy scraping", {
+                hasExplicit
+              });
+              return;
             }
 
-            const spoken = normalizeNumbers(finalText || "").trim();
-            if (!spoken) {
-              throw new Error("Unable to extract readable article text.");
-            }
+            const spoken = finalText;
 
             const payload = {
               url: pageUrl,
