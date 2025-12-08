@@ -74,7 +74,7 @@ export default function Page() {
             <div className="ea-plan-row">
               <div className="ea-plan ea-plan--highlight">
                 <div className="ea-plan-name ea-pricing-plan-title">Free Trial</div>
-                <div className="ea-plan-desc">Try a week free!</div>
+                <div className="ea-plan-desc"><br />Try a week free!</div>
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$0</span>
                 </div>
