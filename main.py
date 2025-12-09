@@ -27,6 +27,10 @@ from app.config.settings import TENANT_KEYS_ENV, get_tenant_settings
 
 logger = logging.getLogger("easyaudio")
 
+CACHE_ROOT = Path(os.getenv("CACHE_ROOT", "/cache")).resolve()
+CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+logger.info(f"[cache] CACHE_ROOT={CACHE_ROOT}")
+
 # Tenant keys:
 # - Configure TENANT_KEYS="demo,demo-blog-01" (comma-separated) to allow widget tenants.
 # - get_validated_tenant() (below) enforces that list using the x-tenant-key header the widget sets from its data-ail-tenant attribute.
@@ -155,15 +159,12 @@ from dotenv import load_dotenv; load_dotenv()
 API_KEY  = (os.getenv("ELEVENLABS_API_KEY","").strip())
 VOICE_ID = (os.getenv("VOICE_ID","").strip())
 MODEL_ID = (os.getenv("MODEL_ID","eleven_turbo_v2").strip())
-from pathlib import Path
-CACHE_DIR = Path(os.getenv("CACHE_DIR","cache"))
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR = CACHE_ROOT
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
-CACHE_PIPELINE_VERSION = "v1"
 
 @dataclass
 class TenantConfig:
@@ -1179,45 +1180,44 @@ def _mp3_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.mp3"
 
 
-# If you change CACHE_PIPELINE_VERSION, hashes will change and old cache files will not be reused.
-def build_article_cache_key(
-    text: str,
-    voice_id: str,
-    model_id: str,
-    extra: dict | None = None,
-) -> str:
+def compute_article_hash(tenant_id: str, text: str, voice_id: str, model_id: str) -> str:
     payload = {
-        "pipeline": CACHE_PIPELINE_VERSION,
+        "tenant": tenant_id,
         "text": text,
-        "voice": voice_id,
-        "model": model_id,
+        "voice": voice_id or "",
+        "model": model_id or "",
     }
-    if extra:
-        payload.update(extra)
-    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
 
 
-def article_mp3_path(
-    canonical_text: str,
+def article_mp3_path(hash_value: str) -> Path:
+    """Return the absolute path for a cached article MP3 on the persistent disk.
+
+    NOTE: This MUST live under CACHE_ROOT so files survive restarts and deploys.
+    """
+    return CACHE_ROOT / f"{hash_value}.mp3"
+
+
+async def ensure_article_cached(
+    hash_value: str,
+    *,
+    text: str,
+    tenant_id: str,
     voice_id: str,
     model_id: str,
-    tenant_key: str,
 ) -> Path:
-    extra = {"tenant": tenant_key}
-    cache_key = build_article_cache_key(canonical_text, voice_id, model_id, extra=extra)
-    return CACHE_DIR / f"{cache_key}.mp3"
+    """
+    Ensure the article audio for `hash` is present on disk.
 
+    - If the MP3 already exists at article_mp3_path(hash), treat as a CACHE HIT and DO NOT call ElevenLabs.
+    - If it does not exist, call ElevenLabs once, stream to a temp file, then atomically move to the final path.
 
-# NOTE: Cache HIT vs MISS is determined by file existence on the persistent disk.
-# If the file exists at article_mp3_path(...), we must not call ElevenLabs again for that hash.
-async def ensure_article_cached(
-    canonical_text: str,
-    tenant_cfg: TenantConfig | None,
-    tenant_key: str,
-) -> tuple[Path, bool, str]:
-    """Ensure the canonical article text has a cached ElevenLabs MP3 and return its Path."""
-    clean = (canonical_text or "").strip()
+    Returns:
+        Path to the cached MP3 on disk.
+    """
+
+    clean = (text or "").strip()
     if not clean:
         raise HTTPException(status_code=422, detail="Empty article text")
     clean = clean[:MAX_CHARS]
@@ -1225,39 +1225,51 @@ async def ensure_article_cached(
     if not tts_ready:
         raise HTTPException(status_code=422, detail="Empty article text")
 
-    voice = (
-        (tenant_cfg.voice_id if tenant_cfg else "")
-        or os.environ.get("ELEVENLABS_VOICE")
-        or os.environ.get("VOICE_ID")
-        or ""
-    ).strip()
-    if not voice:
-        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
-    model = (tenant_cfg.model_id if tenant_cfg and tenant_cfg.model_id else MODEL_ID).strip()
-    path = article_mp3_path(tts_ready, voice, model, tenant_key)
-    h = path.stem
+    mp3_path = article_mp3_path(hash_value)
+    lock = get_lock(hash_value)
+    task = asyncio.current_task()
 
-    if path.exists() and path.stat().st_size > 0:
-        logger.info({"event": "article_cache_hit", "hash": h})
-        return path, True, h
+    def _mark_cache_status(hit: bool) -> None:
+        if task is not None:
+            setattr(task, "_article_cache_hit", hit)
 
-    lock = get_lock(h)
+    if mp3_path.exists() and mp3_path.stat().st_size > 0:
+        logger.info(
+            "[cache] HIT",
+            extra={"hash": hash_value, "mp3_path": str(mp3_path)},
+        )
+        _mark_cache_status(True)
+        return mp3_path
+
     async with lock:
-        if path.exists() and path.stat().st_size > 0:
-            logger.info({"event": "article_cache_hit", "hash": h})
-            return path, True, h
-        check_and_increment_quota(tenant_key)
+        if mp3_path.exists() and mp3_path.stat().st_size > 0:
+            logger.info(
+                "[cache] HIT",
+                extra={"hash": hash_value, "mp3_path": str(mp3_path)},
+            )
+            _mark_cache_status(True)
+            return mp3_path
+
+        check_and_increment_quota(tenant_id)
+        logger.info(
+            "[cache] MISS -> render",
+            extra={"hash": hash_value, "mp3_path": str(mp3_path), "tenant": tenant_id},
+        )
         try:
-            logger.info({"event": "article_cache_miss", "hash": h})
-            data = await tts_bytes(tts_ready, voice, model)
+            data = await tts_bytes(tts_ready, voice_id, model_id)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
-        tmp = path.with_suffix(".part")
+        tmp = mp3_path.with_suffix(".part")
         tmp.write_bytes(data)
-        tmp.replace(path)
-        logger.info({"event": "article_cache_written", "hash": h, "bytes": len(data)})
-        return path, False, h
+        tmp.replace(mp3_path)
+        size = mp3_path.stat().st_size
+        logger.info(
+            "[cache] WRITE complete",
+            extra={"hash": hash_value, "mp3_path": str(mp3_path), "bytes": size},
+        )
+        _mark_cache_status(False)
+        return mp3_path
 
 # Reuse your synth function used by /api/tts, e.g. synth_to_file(text, voice, out_path)
 async def elevenlabs_tts_to_file(text: str, voice: str, out_path: Path) -> str:
@@ -1657,8 +1669,42 @@ async def article_audio(req: ArticleAudioRequest, request: Request):
     if not raw_text:
         raise HTTPException(status_code=400, detail="Must provide url or text")
 
-    canonical = preprocess_for_tts(raw_text)
-    path, was_cached, hash_value = await ensure_article_cached(canonical, tenant_cfg, tenant_id)
+    canonical = (preprocess_for_tts(raw_text) or "").strip()
+    if not canonical:
+        raise HTTPException(status_code=422, detail="Empty article text")
+    canonical = canonical[:MAX_CHARS]
+
+    voice_id = (
+        (tenant_cfg.voice_id if tenant_cfg else "")
+        or os.environ.get("ELEVENLABS_VOICE")
+        or os.environ.get("VOICE_ID")
+        or ""
+    ).strip()
+    if not voice_id:
+        raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
+    model_id = (tenant_cfg.model_id if tenant_cfg and tenant_cfg.model_id else MODEL_ID).strip()
+
+    hash_value = compute_article_hash(tenant_id, canonical, voice_id, model_id)
+    mp3_path = article_mp3_path(hash_value)
+    logger.info(
+        "[cache] request",
+        extra={"tenant": tenant_id, "hash": hash_value, "mp3_path": str(mp3_path)},
+    )
+
+    mp3_path = await ensure_article_cached(
+        hash_value,
+        text=canonical,
+        tenant_id=tenant_id,
+        voice_id=voice_id,
+        model_id=model_id,
+    )
+
+    task = asyncio.current_task()
+    was_cached = False
+    if task is not None and hasattr(task, "_article_cache_hit"):
+        was_cached = bool(getattr(task, "_article_cache_hit"))
+        delattr(task, "_article_cache_hit")
+
     headers = {
         "X-Cache": "HIT" if was_cached else "MISS",
         "X-AIL-Hash": hash_value,
@@ -1666,7 +1712,7 @@ async def article_audio(req: ArticleAudioRequest, request: Request):
     }
     filename = f"{hash_value}.mp3"
     return FileResponse(
-        path,
+        mp3_path,
         media_type="audio/mpeg",
         filename=filename,
         headers=headers,
