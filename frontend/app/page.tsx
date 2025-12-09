@@ -207,7 +207,7 @@ export default function Page() {
               >{`<script
   src="https://hgtts.onrender.com/static/tts-widget.v1.js"
   data-ail-api-base="https://hgtts.onrender.com"
-  data-ail-tenant="demo"
+  data-ail-tenant="_____"
   defer
 ></script>
 <button data-ail-listen>Listen</button>`}</pre>
