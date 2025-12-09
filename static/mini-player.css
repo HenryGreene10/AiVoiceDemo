@@ -119,6 +119,17 @@
   box-shadow: none;
 }
 
+.ail-listen-button-wrapper{
+  margin-top:0.5rem;
+  margin-bottom:1rem;
+}
+
+.ail-listen-button-wrapper .ail-listen-button,
+.ail-listen-button-wrapper .listen-btn,
+.ail-listen-button-wrapper #ai-listen-btn{
+  display:inline-block;
+}
+
 /* 5) Mobile niceties */
 @media (max-width: 480px){
   #ai-listen-btn{ padding: 8px 12px; font-size:14px; }

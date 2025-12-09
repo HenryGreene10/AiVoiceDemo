@@ -1,10 +1,21 @@
 // v108 — inline pill under H1, clean narration order, skip clutter, clean start
+// NOTE: Auto-insertion uses MutationObserver to handle SPA/hydrated news sites.
+// Cache behavior, hashing, and trial limits are owned by the backend and are not modified here.
 console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
 (() => {
   "use strict";
   if (window.__ttsWidgetLoaded) return;
   window.__ttsWidgetLoaded = true;
+
+  let ailArticleRoot = null;
+  let ailListenButton = null;
+  let ailArticleDetectionDone = false;
+  let ailArticleMutationObserver = null;
+
+  function logAIL(...args) {
+    console.log("[AIL]", ...args);
+  }
 
   const $ = (s, r = document) => r.querySelector(s);
 
@@ -226,7 +237,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     return (el?.innerText || el?.textContent || "").replace(/\s+/g, " ").trim().length;
   }
 
-  function findArticleRoot() {
+function findArticleRoot() {
     const explicit = getExplicitArticle();
     if (explicit) return explicit;
 
@@ -267,6 +278,35 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     return null;
   }
 
+  function findArticleContext() {
+    const root = findArticleRoot();
+    if (!root) return { root: null, heading: null, placementTarget: null };
+
+    let heading = root.querySelector("h1") || root.querySelector("h2");
+
+    if (!heading) {
+      const docHeading =
+        document.querySelector("article h1, main h1, [role='main'] h1") ||
+        document.querySelector("article h2, main h2, [role='main'] h2");
+      if (
+        docHeading &&
+        (docHeading.compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ) {
+        heading = docHeading;
+      }
+    }
+
+    let placementTarget = null;
+    if (heading) {
+      const headerLike = heading.closest(
+        "header, .metadata, .byline, .article-meta, .Article__header, .story-header"
+      );
+      placementTarget = headerLike || heading.parentElement || heading;
+    }
+
+    return { root, heading, placementTarget };
+  }
+
   function describeNode(node) {
     if (!node || !node.tagName) return "unknown";
     let desc = node.tagName.toLowerCase();
@@ -287,14 +327,21 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
   function extractArticleParts(listenButton) {
     let article = getExplicitArticle();
+    let heading = null;
 
-    if (!article) {
-      if (listenButton) {
-        article = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
-      }
-      if (!article) {
-        article = findArticleRoot();
-      }
+    if (!article && listenButton) {
+      article = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
+    }
+    if (!article && ailArticleRoot) {
+      article = ailArticleRoot;
+    }
+
+    const context = findArticleContext();
+    if (!article && context.root) {
+      article = context.root;
+    }
+    if (!heading && context.heading) {
+      heading = context.heading;
     }
 
     if (!article) {
@@ -302,11 +349,12 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
       return { title: "", author: "", bodyText: "", fullText: "" };
     }
 
-    const titleEl =
-      article.querySelector("[data-ail-title]") ||
-      article.querySelector("h1, h2");
+    if (!heading) {
+      heading = article.querySelector("[data-ail-title]") || article.querySelector("h1, h2");
+    }
+
     const authorEl = article.querySelector("[data-ail-author]");
-    const title = titleEl ? titleEl.textContent.replace(/\s+/g, " ").trim() : "";
+    const title = heading ? heading.textContent.replace(/\s+/g, " ").trim() : "";
     const author = authorEl ? authorEl.textContent.replace(/\s+/g, " ").trim() : "";
 
     const bodyRoot = article.querySelector("[data-ail-body]") || article;
@@ -428,15 +476,68 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
         });
       }
 
+      function detachArticleObserver() {
+        if (ailArticleMutationObserver) {
+          ailArticleMutationObserver.disconnect();
+          ailArticleMutationObserver = null;
+          logAIL("MutationObserver detached after successful article detection.");
+        }
+      }
+
+      function markArticleDetectionComplete() {
+        if (!ailArticleDetectionDone) {
+          ailArticleDetectionDone = true;
+          detachArticleObserver();
+        }
+      }
+
+      function setupArticleMutationObserver() {
+        if (ailArticleMutationObserver || ailArticleDetectionDone) return;
+        if (typeof MutationObserver === "undefined") return;
+
+        ailArticleMutationObserver = new MutationObserver(() => {
+          if (
+            ailArticleDetectionDone &&
+            ailListenButton &&
+            document.body.contains(ailListenButton)
+          ) {
+            return;
+          }
+
+          if (!ailArticleMutationObserver) return;
+          if (ailArticleMutationObserver.__pending) return;
+          ailArticleMutationObserver.__pending = true;
+          requestAnimationFrame(() => {
+            if (!ailArticleMutationObserver) return;
+            ailArticleMutationObserver.__pending = false;
+            if (
+              ailArticleDetectionDone &&
+              ailListenButton &&
+              document.body.contains(ailListenButton)
+            ) {
+              return;
+            }
+            initListenButton();
+          });
+        });
+
+        ailArticleMutationObserver.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+      }
+
       function initListenButton() {
         // 1) If a .ail-listen already exists, just wire it up.
-        let btn = document.querySelector(".ail-listen");
-        if (btn) {
-          btn.id ||= "ai-listen-btn";
-          btn.classList.add("listen-btn", "ail-listen");
-          if (className) btn.classList.add(className);
-          if (!btn.textContent?.trim()) btn.textContent = labelIdle;
-          attachListenHandler(btn);
+        const manualBtn = document.querySelector(".ail-listen");
+        if (manualBtn && !manualBtn.dataset.ailAuto) {
+          manualBtn.id ||= "ai-listen-btn";
+          manualBtn.classList.add("listen-btn", "ail-listen");
+          if (className) manualBtn.classList.add(className);
+          if (!manualBtn.textContent?.trim()) manualBtn.textContent = labelIdle;
+          attachListenHandler(manualBtn);
+          ailListenButton = manualBtn;
+          markArticleDetectionComplete();
           return;
         }
 
@@ -445,52 +546,69 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
           return;
         }
 
-        const articleRoot = findArticleRoot();
-        if (!articleRoot) {
-          console.warn("[AIL] No suitable article root found; Listen button not injected.");
+        if (
+          ailArticleDetectionDone &&
+          ailListenButton &&
+          document.body.contains(ailListenButton)
+        ) {
+          logAIL("Listen button already attached; skipping re-attach.");
           return;
         }
 
+        const { root, placementTarget } = findArticleContext();
+
         const srcBase = (scriptEl && scriptEl.src) || location.href;
         ensureMiniStyles(srcBase);
-
-        btn = document.createElement("button");
-        btn.type = "button";
-        btn.id = "ai-listen-btn";
-        btn.classList.add("listen-btn", "ail-listen");
-        if (className) btn.classList.add(className);
-        btn.textContent = labelIdle;
-        btn.style.display = "inline-block";
-        btn.style.padding = "0.4rem 1.2rem";
-        btn.style.borderRadius = "999px";
-        btn.style.border = "none";
-        btn.style.cursor = "pointer";
-        btn.style.fontWeight = "600";
+        let btn = ailListenButton;
+        if (!btn || !document.body.contains(btn)) {
+          btn = document.createElement("button");
+          btn.type = "button";
+          btn.id = "ai-listen-btn";
+          btn.classList.add("listen-btn", "ail-listen");
+          btn.dataset.ailAuto = "1";
+          if (className) btn.classList.add(className);
+          btn.textContent = labelIdle;
+          btn.style.display = "inline-block";
+          btn.style.padding = "0.4rem 1.2rem";
+          btn.style.borderRadius = "999px";
+          btn.style.border = "none";
+          btn.style.cursor = "pointer";
+          btn.style.fontWeight = "600";
+          attachListenHandler(btn);
+          ailListenButton = btn;
+        }
 
         const wrapper = document.createElement("div");
-        wrapper.className = "ail-listen-auto";
+        wrapper.className = "ail-listen-button-wrapper";
+
+        const previousWrapper = btn.closest && btn.closest(".ail-listen-button-wrapper");
         wrapper.appendChild(btn);
-
-        const directHeading = findMainHeading(articleRoot);
-        let insertionTarget = directHeading;
-        if (!insertionTarget) {
-          const parentHeading = findMainHeading(document);
-          if (parentHeading && parentHeading.parentNode && articleRoot.contains(parentHeading)) {
-            insertionTarget = parentHeading;
-          }
+        if (previousWrapper && previousWrapper !== wrapper) {
+          previousWrapper.remove();
         }
 
-        if (insertionTarget && insertionTarget.parentNode) {
-          insertionTarget.parentNode.insertBefore(wrapper, insertionTarget);
-        } else {
-          articleRoot.insertBefore(wrapper, articleRoot.firstChild);
+        if (placementTarget) {
+          placementTarget.insertAdjacentElement("afterend", wrapper);
+          ailArticleRoot = root;
+          markArticleDetectionComplete();
+          logAIL("Listen button attached near article root:", describeNode(placementTarget));
+          return;
         }
 
-        attachListenHandler(btn);
-        console.log("[AIL] Listen button attached near article root:", describeNode(articleRoot));
+        if (root) {
+          root.insertBefore(wrapper, root.firstChild);
+          ailArticleRoot = root;
+          markArticleDetectionComplete();
+          logAIL("Listen button attached at fallback article root:", describeNode(root));
+          return;
+        }
+
+        document.body.insertAdjacentElement("afterbegin", wrapper);
+        logAIL("No suitable article root; using generic placement only.");
       }
 
       initListenButton();
+      setupArticleMutationObserver();
     }
   };
 
@@ -507,4 +625,11 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   } else {
     runInit();
   }
+
+  /*
+    Manual verification checklist:
+    - Demo article: LISTEN button renders under the title/byline, first playback reads the headline, reload hits cache instantly.
+    - CNN (hydrated DOM): MutationObserver repositions the button under the heading once content loads; first playback includes the headline and cache HITs on reload.
+    - Host-provided button: no duplicate LISTEN buttons are injected.
+  */
 })();
