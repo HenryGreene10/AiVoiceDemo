@@ -1215,8 +1215,8 @@ async def ensure_article_cached(
     canonical_text: str,
     tenant_cfg: TenantConfig | None,
     tenant_key: str,
-) -> tuple[str, bool, str]:
-    """Ensure the canonical article text has a cached ElevenLabs MP3."""
+) -> tuple[Path, bool, str]:
+    """Ensure the canonical article text has a cached ElevenLabs MP3 and return its Path."""
     clean = (canonical_text or "").strip()
     if not clean:
         raise HTTPException(status_code=422, detail="Empty article text")
@@ -1239,13 +1239,13 @@ async def ensure_article_cached(
 
     if path.exists() and path.stat().st_size > 0:
         logger.info({"event": "article_cache_hit", "hash": h})
-        return f"/cache/{path.name}", True, h
+        return path, True, h
 
     lock = get_lock(h)
     async with lock:
         if path.exists() and path.stat().st_size > 0:
             logger.info({"event": "article_cache_hit", "hash": h})
-            return f"/cache/{path.name}", True, h
+            return path, True, h
         check_and_increment_quota(tenant_key)
         try:
             logger.info({"event": "article_cache_miss", "hash": h})
@@ -1257,7 +1257,7 @@ async def ensure_article_cached(
         tmp.write_bytes(data)
         tmp.replace(path)
         logger.info({"event": "article_cache_written", "hash": h, "bytes": len(data)})
-        return f"/cache/{path.name}", False, h
+        return path, False, h
 
 # Reuse your synth function used by /api/tts, e.g. synth_to_file(text, voice, out_path)
 async def elevenlabs_tts_to_file(text: str, voice: str, out_path: Path) -> str:
@@ -1640,15 +1640,9 @@ class ArticleAudioRequest(BaseModel):
     text: str | None = None
     href: str | None = None
 
-class ArticleAudioResponse(BaseModel):
-    audio_url: str
-    cached: bool
-    hash: str
-    tenant: str
-
 # Manual test:
-# POST the same text twice → first call MISS, second HIT, same audio_url/hash.
-@app.post("/api/article-audio", response_model=ArticleAudioResponse)
+# POST the same text twice → first call MISS, second HIT, same audio output.
+@app.post("/api/article-audio")
 async def article_audio(req: ArticleAudioRequest, request: Request):
     tenant_id = get_validated_tenant(request)
     tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
@@ -1664,8 +1658,19 @@ async def article_audio(req: ArticleAudioRequest, request: Request):
         raise HTTPException(status_code=400, detail="Must provide url or text")
 
     canonical = preprocess_for_tts(raw_text)
-    audio_url, was_cached, hash_value = await ensure_article_cached(canonical, tenant_cfg, tenant_id)
-    return ArticleAudioResponse(audio_url=audio_url, cached=was_cached, hash=hash_value, tenant=tenant_id)
+    path, was_cached, hash_value = await ensure_article_cached(canonical, tenant_cfg, tenant_id)
+    headers = {
+        "X-Cache": "HIT" if was_cached else "MISS",
+        "X-AIL-Hash": hash_value,
+        "X-AIL-Tenant": tenant_id,
+    }
+    filename = f"{hash_value}.mp3"
+    return FileResponse(
+        path,
+        media_type="audio/mpeg",
+        filename=filename,
+        headers=headers,
+    )
 
 # --- read
 class ReadRequest(BaseModel):
