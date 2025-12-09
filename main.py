@@ -6,7 +6,7 @@ from collections import OrderedDict
 from dotenv import load_dotenv; 
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse, HTMLResponse
-from typing import Optional
+from typing import Optional, Any, Dict
 from dataclasses import dataclass
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -68,6 +68,50 @@ def get_validated_tenant(request: Request) -> str:
         raise HTTPException(status_code=403, detail="Unknown tenant")
 
     return tenant_id
+
+
+def get_tenant_limits(tenant_id: str) -> Dict[str, Any]:
+    """
+    Return simple limit information for a tenant.
+    Currently used for per-article text caps on trial tenants.
+    """
+    cfg = TENANTS.get(tenant_id, {})
+    return {
+        "max_renders_per_day": cfg.get("max_renders_per_day"),
+        "max_chars_per_article": cfg.get("max_chars_per_article"),
+    }
+
+
+def enforce_article_length_limit(tenant_id: str, text: str) -> tuple[str, bool]:
+    """
+    Apply a per-article character limit for tenants that define max_chars_per_article.
+
+    Returns:
+      (possibly_truncated_text, was_truncated_flag)
+
+    For trial tenants, this enforces a soft ~20 minute cap so a single long
+    article can't burn a huge amount of ElevenLabs minutes during the trial.
+    """
+    limits = get_tenant_limits(tenant_id)
+    max_chars = limits.get("max_chars_per_article")
+    if not max_chars or max_chars <= 0:
+        # No limit configured for this tenant.
+        return text, False
+
+    length = len(text or "")
+    if length <= max_chars:
+        return text, False
+
+    truncated = (text or "")[:max_chars]
+
+    logger.info(
+        "[quota] tenant=%s exceeded max_chars_per_article (%s > %s); truncating text for trial preview",
+        tenant_id,
+        length,
+        max_chars,
+    )
+
+    return truncated, True
 
 # --- rate limiting ---
 import time, collections
@@ -1199,6 +1243,8 @@ def article_mp3_path(hash_value: str) -> Path:
     return CACHE_ROOT / f"{hash_value}.mp3"
 
 
+# Cache HIT vs MISS is determined solely by MP3 file existence on disk.
+# Logs emitted here are informational only; they do not change control flow.
 async def ensure_article_cached(
     hash_value: str,
     *,
@@ -1235,6 +1281,11 @@ async def ensure_article_cached(
 
     if mp3_path.exists() and mp3_path.stat().st_size > 0:
         logger.info(
+            "[cache] article_cache_hit hash=%s path=%s",
+            hash_value,
+            mp3_path,
+        )
+        logger.info(
             "[cache] HIT",
             extra={"hash": hash_value, "mp3_path": str(mp3_path)},
         )
@@ -1244,6 +1295,11 @@ async def ensure_article_cached(
     async with lock:
         if mp3_path.exists() and mp3_path.stat().st_size > 0:
             logger.info(
+                "[cache] article_cache_hit hash=%s path=%s",
+                hash_value,
+                mp3_path,
+            )
+            logger.info(
                 "[cache] HIT",
                 extra={"hash": hash_value, "mp3_path": str(mp3_path)},
             )
@@ -1251,6 +1307,11 @@ async def ensure_article_cached(
             return mp3_path
 
         check_and_increment_quota(tenant_id)
+        logger.info(
+            "[cache] article_cache_miss hash=%s path=%s; generating via ElevenLabs",
+            hash_value,
+            mp3_path,
+        )
         logger.info(
             "[cache] MISS -> render",
             extra={"hash": hash_value, "mp3_path": str(mp3_path), "tenant": tenant_id},
@@ -1673,6 +1734,13 @@ async def article_audio(req: ArticleAudioRequest, request: Request):
     if not canonical:
         raise HTTPException(status_code=422, detail="Empty article text")
     canonical = canonical[:MAX_CHARS]
+
+    canonical, truncated = enforce_article_length_limit(tenant_id, canonical)
+    if truncated:
+        logger.info(
+            "[quota] trial preview audio truncated for tenant=%s; full article exceeds trial per-article limit",
+            tenant_id,
+        )
 
     voice_id = (
         (tenant_cfg.voice_id if tenant_cfg else "")
