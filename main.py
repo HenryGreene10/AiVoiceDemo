@@ -23,18 +23,47 @@ import csv
 from threading import Lock
 from datetime import datetime, timezone, date
 from app.config.tenants import TENANTS, TENANT_USAGE
+from app.config.settings import TENANT_KEYS_ENV, get_tenant_settings
 
 logger = logging.getLogger("easyaudio")
 
-# --- tenant key authentication ---
-TENANT_KEYS = set(s.strip() for s in os.getenv("TENANT_KEYS","").split(",") if s.strip())
+# Tenant keys:
+# - Configure TENANT_KEYS="demo,demo-blog-01" (comma-separated) to allow widget tenants.
+# - get_validated_tenant() (below) enforces that list using the x-tenant-key header the widget sets from its data-ail-tenant attribute.
+# - All TTS/cache endpoints call that helper once so every request is traced to a validated tenant.
 
-async def require_tenant(request: Request):
-    if not TENANT_KEYS:
-        return  # open mode
-    key = request.headers.get("x-tenant-key")
-    if key not in TENANT_KEYS:
-        raise HTTPException(status_code=401, detail="Missing or invalid tenant key.")
+
+def _extract_tenant_key(request: Request) -> str | None:
+    header = request.headers.get("x-tenant-key")
+    if header and header.strip():
+        return header.strip()
+    tenant_param = request.query_params.get("tenant")
+    if tenant_param and tenant_param.strip():
+        return tenant_param.strip()
+    return None
+
+
+def get_validated_tenant(request: Request) -> str:
+    """Resolve tenant from request metadata and enforce the env-configured allowlist."""
+    tenant_id = _extract_tenant_key(request)
+    # To onboard a new client, add their key to TENANT_KEYS in the environment and redeploy.
+    if not tenant_id:
+        logger.warning("[tenant] Missing x-tenant-key header")
+        raise HTTPException(status_code=403, detail="Missing tenant key (x-tenant-key header).")
+
+    allowed_keys = set(get_tenant_settings().tenant_keys)
+    if allowed_keys and tenant_id not in allowed_keys:
+        logger.warning(f"[tenant] Unknown tenant key (env allowlist): {tenant_id}")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Unknown tenant key. Update {TENANT_KEYS_ENV} to include '{tenant_id}'.",
+        )
+
+    if tenant_id not in TENANTS:
+        logger.warning(f"[tenant] Unknown tenant: {tenant_id}")
+        raise HTTPException(status_code=403, detail="Unknown tenant")
+
+    return tenant_id
 
 # --- rate limiting ---
 import time, collections
@@ -65,25 +94,10 @@ def rate_limit_check(request: Request):
     ip = _client_ip(request)
     ok_ip = _allow(_ip_hits, ip, *RATE_LIMITS["per_ip"])
     # tenant key (or 'public' if open mode)
-    tenant = request.headers.get("x-tenant-key") or "public"
+    tenant = _extract_tenant_key(request) or "public"
     ok_tenant = _allow(_tenant_hits, tenant, *RATE_LIMITS["per_tenant"])
     if not (ok_ip and ok_tenant):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry later.")
-
-
-def get_tenant_id(request: Request) -> str:
-    """Resolve tenant from request headers with a safe fallback."""
-    tenant_id = request.headers.get("x-tenant-key")
-
-    if not tenant_id:
-        tenant_id = "demo"
-        logger.warning("[tenant] Missing x-tenant-key header, defaulting to 'demo'")
-
-    if tenant_id not in TENANTS:
-        logger.warning(f"[tenant] Unknown tenant: {tenant_id}")
-        raise HTTPException(status_code=403, detail="Unknown tenant")
-
-    return tenant_id
 
 
 def check_and_increment_quota(tenant_id: str) -> None:
@@ -149,6 +163,7 @@ MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
+CACHE_PIPELINE_VERSION = "v1"
 
 @dataclass
 class TenantConfig:
@@ -717,9 +732,8 @@ async def tts_get(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    await require_tenant(request)
+    tenant_id = get_validated_tenant(request)
     rate_limit_check(request)
-    tenant_id = get_tenant_id(request)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
@@ -747,7 +761,7 @@ def tts_post(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    tenant_id = get_tenant_id(request)
+    tenant_id = get_validated_tenant(request)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
@@ -777,9 +791,8 @@ async def api_tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(0),
 ):
-    await require_tenant(request)
+    tenant_id = get_validated_tenant(request)
     rate_limit_check(request)
-    tenant_id = get_tenant_id(request)
 
     v = (voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
     if not v:
@@ -1166,13 +1179,34 @@ def _mp3_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.mp3"
 
 
-def article_hash(canonical_text: str, tenant_key: str) -> str:
-    base = f"{tenant_key}|{canonical_text}"
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:32]
+# If you change CACHE_PIPELINE_VERSION, hashes will change and old cache files will not be reused.
+def build_article_cache_key(
+    text: str,
+    voice_id: str,
+    model_id: str,
+    extra: dict | None = None,
+) -> str:
+    payload = {
+        "pipeline": CACHE_PIPELINE_VERSION,
+        "text": text,
+        "voice": voice_id,
+        "model": model_id,
+    }
+    if extra:
+        payload.update(extra)
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def article_mp3_path(canonical_text: str, tenant_key: str) -> Path:
-    return CACHE_DIR / f"{article_hash(canonical_text, tenant_key)}.mp3"
+def article_mp3_path(
+    canonical_text: str,
+    voice_id: str,
+    model_id: str,
+    tenant_key: str,
+) -> Path:
+    extra = {"tenant": tenant_key}
+    cache_key = build_article_cache_key(canonical_text, voice_id, model_id, extra=extra)
+    return CACHE_DIR / f"{cache_key}.mp3"
 
 
 async def ensure_article_cached(
@@ -1188,12 +1222,6 @@ async def ensure_article_cached(
     tts_ready = enhance_prosody(clean)
     if not tts_ready:
         raise HTTPException(status_code=422, detail="Empty article text")
-    path = article_mp3_path(tts_ready, tenant_key)
-    h = path.stem
-
-    if path.exists() and path.stat().st_size > 0:
-        print({"event": "article_cache_hit", "hash": h})
-        return f"/cache/{path.name}", True, h
 
     voice = (
         (tenant_cfg.voice_id if tenant_cfg else "")
@@ -1204,6 +1232,12 @@ async def ensure_article_cached(
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
     model = (tenant_cfg.model_id if tenant_cfg and tenant_cfg.model_id else MODEL_ID).strip()
+    path = article_mp3_path(tts_ready, voice, model, tenant_key)
+    h = path.stem
+
+    if path.exists() and path.stat().st_size > 0:
+        print({"event": "article_cache_hit", "hash": h})
+        return f"/cache/{path.name}", True, h
 
     lock = get_lock(h)
     async with lock:
@@ -1241,8 +1275,7 @@ _precache_lock = Lock()
 
 @app.post("/precache_text")
 async def precache_text(req: PrecacheReq, x_tenant_key: Optional[str] = Header(default=None)):
-    # optional: enforce tenant like other endpoints
-    # if TENANT_KEYS and x_tenant_key not in TENANT_KEYS: raise HTTPException(401, "bad tenant")
+    # optional: enforce tenant like other endpoints by calling get_validated_tenant(request)
     voice = req.voice or os.getenv("VOICE_ID", "")
     if not req.text.strip():
         raise HTTPException(400, "text required")
@@ -1437,7 +1470,7 @@ def tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    tenant_id = get_tenant_id(request)
+    tenant_id = get_validated_tenant(request)
     voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE not set).")
@@ -1614,7 +1647,7 @@ class ArticleAudioResponse(BaseModel):
 # POST the same text twice → first call MISS, second HIT, same audio_url/hash.
 @app.post("/api/article-audio", response_model=ArticleAudioResponse)
 async def article_audio(req: ArticleAudioRequest, request: Request):
-    tenant_id = get_tenant_id(request)
+    tenant_id = get_validated_tenant(request)
     tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
 
     raw_text = (req.text or "").strip()
