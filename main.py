@@ -1209,6 +1209,8 @@ def article_mp3_path(
     return CACHE_DIR / f"{cache_key}.mp3"
 
 
+# NOTE: Cache HIT vs MISS is determined by file existence on the persistent disk.
+# If the file exists at article_mp3_path(...), we must not call ElevenLabs again for that hash.
 async def ensure_article_cached(
     canonical_text: str,
     tenant_cfg: TenantConfig | None,
@@ -1236,16 +1238,17 @@ async def ensure_article_cached(
     h = path.stem
 
     if path.exists() and path.stat().st_size > 0:
-        print({"event": "article_cache_hit", "hash": h})
+        logger.info({"event": "article_cache_hit", "hash": h})
         return f"/cache/{path.name}", True, h
 
     lock = get_lock(h)
     async with lock:
         if path.exists() and path.stat().st_size > 0:
-            print({"event": "article_cache_hit", "hash": h})
+            logger.info({"event": "article_cache_hit", "hash": h})
             return f"/cache/{path.name}", True, h
         check_and_increment_quota(tenant_key)
         try:
+            logger.info({"event": "article_cache_miss", "hash": h})
             data = await tts_bytes(tts_ready, voice, model)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
@@ -1253,7 +1256,7 @@ async def ensure_article_cached(
         tmp = path.with_suffix(".part")
         tmp.write_bytes(data)
         tmp.replace(path)
-        print({"event": "article_cache_miss", "hash": h, "bytes": len(data)})
+        logger.info({"event": "article_cache_written", "hash": h, "bytes": len(data)})
         return f"/cache/{path.name}", False, h
 
 # Reuse your synth function used by /api/tts, e.g. synth_to_file(text, voice, out_path)

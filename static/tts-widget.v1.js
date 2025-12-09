@@ -225,8 +225,11 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     if (explicit) return explicit;
 
     const selectors = [
-      "article",
       "main article",
+      "main .post",
+      "main .post-content",
+      "main .entry-content",
+      "article",
       "main",
       '[role="main"]',
       ".post-content, .entry-content, .article-body, .blog-post, .post-body"
@@ -267,6 +270,13 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     const role = node.getAttribute?.("role");
     if (role) desc += `[role=${role}]`;
     return desc;
+  }
+
+  function findMainHeading(root) {
+    if (!root) return null;
+    const primary = root.querySelector("h1");
+    if (primary) return primary;
+    return root.querySelector("h2, h3");
   }
 
   function extractArticleParts(listenButton) {
@@ -435,25 +445,37 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
           return;
         }
 
+        const srcBase = (scriptEl && scriptEl.src) || location.href;
+        ensureMiniStyles(srcBase);
+
         btn = document.createElement("button");
         btn.type = "button";
         btn.id = "ai-listen-btn";
         btn.classList.add("listen-btn", "ail-listen");
         if (className) btn.classList.add(className);
         btn.textContent = labelIdle;
+        btn.style.display = "inline-block";
+        btn.style.padding = "0.4rem 1.2rem";
+        btn.style.borderRadius = "999px";
+        btn.style.border = "none";
+        btn.style.cursor = "pointer";
+        btn.style.fontWeight = "600";
 
         const wrapper = document.createElement("div");
         wrapper.className = "ail-listen-auto";
         wrapper.appendChild(btn);
 
-        const directHeading = Array.from(articleRoot.children || []).find((child) =>
-          /^H[1-6]$/i.test(child.tagName)
-        );
-        const fallbackHeading = articleRoot.querySelector("h1, h2, h3");
-        const headingTarget = directHeading || fallbackHeading;
+        const directHeading = findMainHeading(articleRoot);
+        let insertionTarget = directHeading;
+        if (!insertionTarget) {
+          const parentHeading = findMainHeading(document);
+          if (parentHeading && parentHeading.parentNode && articleRoot.contains(parentHeading)) {
+            insertionTarget = parentHeading;
+          }
+        }
 
-        if (headingTarget && headingTarget.parentNode) {
-          headingTarget.parentNode.insertBefore(wrapper, headingTarget);
+        if (insertionTarget && insertionTarget.parentNode) {
+          insertionTarget.parentNode.insertBefore(wrapper, insertionTarget);
         } else {
           articleRoot.insertBefore(wrapper, articleRoot.firstChild);
         }
