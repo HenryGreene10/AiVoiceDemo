@@ -330,6 +330,29 @@ function findArticleRoot() {
     return { root, heading, placementTarget, byline, firstBodyBlock };
   }
 
+  function findFirstBodyParagraph(root) {
+    if (!root) return null;
+    const MIN_CHARS = 80;
+    const paragraphs = root.querySelectorAll("p");
+    for (const p of paragraphs) {
+      if (!p) continue;
+      if (p.closest("header, nav, [aria-label*='breadcrumb' i], [aria-label*='navigation' i]")) {
+        continue;
+      }
+      const text = (p.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length >= MIN_CHARS) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  function shortTextSnippet(text, max = 80) {
+    const clean = (text || "").replace(/\s+/g, " ").trim();
+    if (!clean) return "";
+    return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+  }
+
   function describeNode(node) {
     if (!node || !node.tagName) return "unknown";
     let desc = node.tagName.toLowerCase();
@@ -578,7 +601,8 @@ function findArticleRoot() {
           return;
         }
 
-        const { root, placementTarget, firstBodyBlock } = findArticleContext();
+        const { root, placementTarget } = findArticleContext();
+        const firstLongParagraph = root ? findFirstBodyParagraph(root) : null;
 
         const srcBase = (scriptEl && scriptEl.src) || location.href;
         ensureMiniStyles(srcBase);
@@ -610,12 +634,20 @@ function findArticleRoot() {
           previousWrapper.remove();
         }
 
-        if (firstBodyBlock && firstBodyBlock.parentElement) {
-          firstBodyBlock.parentElement.insertBefore(wrapper, firstBodyBlock);
+        if (firstLongParagraph && firstLongParagraph.parentElement) {
+          firstLongParagraph.parentElement.insertBefore(wrapper, firstLongParagraph);
           ailArticleRoot = root;
           markArticleDetectionComplete();
-          logAIL("Listen button attached before first body block:", describeNode(firstBodyBlock));
+          logAIL("Listen button attached near long body paragraph", {
+            snippet: shortTextSnippet(firstLongParagraph.textContent),
+          });
           return;
+        }
+
+        if (root) {
+          logAIL("Listen button fallback placement (no long body paragraph found)", {
+            reason: "no-long-para",
+          });
         }
 
         if (placementTarget) {
@@ -656,6 +688,13 @@ function findArticleRoot() {
   } else {
     runInit();
   }
+
+  /*
+   * Placement notes:
+   * - Prefer the first long body paragraph (>80 chars) under the detected article root.
+   * - Fall back to heading/byline/root placement if no qualifying paragraph is found.
+   * - Duplicate guard and MutationObserver reattach logic remain unchanged.
+   */
 
   /*
     Manual verification checklist:
