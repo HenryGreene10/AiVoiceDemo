@@ -183,9 +183,9 @@ async def tts_bytes(
         "text": text,
         "model_id": model_id,
         "voice_settings": voice_settings or {
-            "stability": 0.35,
-            "similarity_boost": 0.9,
-            "style": 0.35,
+            "stability": 0.45,
+            "similarity_boost": 0.85,
+            "style": 0.60,
             "use_speaker_boost": True,
         },
         "optimize_streaming_latency": 2,
@@ -264,7 +264,8 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
 
     # 2) PREFETCH FIRST CHUNK to avoid 200/0B
     try:
-        first_bytes = await tts_bytes(parts[0], v, m)
+        first_text = enhance_prosody(preprocess_for_tts(parts[0]))
+        first_bytes = await tts_bytes(first_text, v, m)
         print({"event": "chunk_ok", "i": 0, "bytes": len(first_bytes)})
     except Exception as e:
         # Fail BEFORE starting the stream
@@ -276,7 +277,8 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
         yield first_bytes
         for i, part in enumerate(parts[1:], start=1):
             try:
-                data = await tts_bytes(part, v, m)
+                part_text = enhance_prosody(preprocess_for_tts(part))
+                data = await tts_bytes(part_text, v, m)
                 print({"event": "chunk_ok", "i": i, "bytes": len(data)})
                 yield data
             except Exception as e:
@@ -338,6 +340,28 @@ def preprocess_for_tts(text: str) -> str:
     t = re.sub(r"([,.;:!?])(?=\S)", r"\1 ", t)
     t = re.sub(r"\s{2,}", " ", t)
     return t.strip()
+
+def enhance_prosody(raw: Optional[str]) -> str:
+    """Lightly adjust whitespace and add gentle pauses for smoother narration."""
+    if not raw:
+        return ""
+
+    cleaned = raw.replace("\r", " ")
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    sentences = [s.strip() for s in parts if s.strip()]
+    if not sentences:
+        return cleaned
+
+    with_paragraphs: list[str] = []
+    for idx, s in enumerate(sentences):
+        with_paragraphs.append(s)
+        if (idx + 1) % 3 == 0 and idx != len(sentences) - 1:
+            with_paragraphs.append("")
+
+    return "\n".join(with_paragraphs)
 
 # --- Robust fetch for /read
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
@@ -764,8 +788,9 @@ async def api_tts(
     # Normalize and (optionally) cap for safety
     narrated = prepare_article("", "", body.text or "")
     clean    = preprocess_for_tts(narrated)[:MAX_CHARS]
+    text_for_tts = enhance_prosody(clean)
 
-    key  = _cache_key(clean, v, (model or MODEL_ID), stability, similarity, style, speaker_boost, opt_latency)
+    key  = _cache_key(text_for_tts, v, (model or MODEL_ID), stability, similarity, style, speaker_boost, opt_latency)
     outp = _mp3_path(key)
 
     # If file exists & non-empty -> HIT
@@ -781,7 +806,7 @@ async def api_tts(
 
         check_and_increment_quota(tenant_id)
         try:
-            data = await tts_bytes(clean, v, (model or MODEL_ID))
+            data = await tts_bytes(text_for_tts, v, (model or MODEL_ID))
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
@@ -841,7 +866,8 @@ async def read(url: str, voice: str | None = None, model: str | None = None):
     bufs: list[bytes] = []
     for i, part in enumerate(parts):
         try:
-            audio = await tts_bytes(part, v, m)
+            processed_part = enhance_prosody(preprocess_for_tts(part))
+            audio = await tts_bytes(processed_part, v, m)
             bufs.append(audio)
             print({"event":"read_part_ok","i":i,"bytes":len(audio)})
         except Exception as e:
@@ -893,11 +919,16 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
 
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
     headers = {"xi-api-key": API_KEY, "Accept": "audio/mpeg", "Content-Type": "application/json"}
+    prepared_text = enhance_prosody(preprocess_for_tts(text))
+
     payload = {
-        "text": text,
+        "text": prepared_text,
         "model_id": model_id,
         "voice_settings": voice_settings or {
-            "stability": 0.35, "similarity_boost": 0.9, "style": 0.35, "use_speaker_boost": True,
+            "stability": 0.45,
+            "similarity_boost": 0.85,
+            "style": 0.60,
+            "use_speaker_boost": True,
         },
         "optimize_streaming_latency": 2,
     }
@@ -1022,8 +1053,9 @@ def stream_with_cache(text: str, voice: str, model: str,
     """
     metrics["tts_requests"] += 1
     clean = preprocess_for_tts(text)
+    tts_input = enhance_prosody(clean)
 
-    key  = _cache_key(clean, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+    key  = _cache_key(tts_input, voice, model, stability, similarity, style, speaker_boost, opt_latency)
     path = os.path.join(CACHE_DIR, f"{key}.mp3")
     if os.path.exists(path):
         metrics["tts_cache_hits"] += 1
@@ -1041,7 +1073,7 @@ def stream_with_cache(text: str, voice: str, model: str,
         "Content-Type": "application/json",
     }
     payload = {
-        "text": clean,
+        "text": tts_input,
         "model_id": model,
         "optimize_streaming_latency": int(opt_latency),
         "voice_settings": {
@@ -1153,7 +1185,10 @@ async def ensure_article_cached(
     if not clean:
         raise HTTPException(status_code=422, detail="Empty article text")
     clean = clean[:MAX_CHARS]
-    path = article_mp3_path(clean, tenant_key)
+    tts_ready = enhance_prosody(clean)
+    if not tts_ready:
+        raise HTTPException(status_code=422, detail="Empty article text")
+    path = article_mp3_path(tts_ready, tenant_key)
     h = path.stem
 
     if path.exists() and path.stat().st_size > 0:
@@ -1177,7 +1212,7 @@ async def ensure_article_cached(
             return f"/cache/{path.name}", True, h
         check_and_increment_quota(tenant_key)
         try:
-            data = await tts_bytes(clean, voice, model)
+            data = await tts_bytes(tts_ready, voice, model)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
@@ -1211,20 +1246,22 @@ async def precache_text(req: PrecacheReq, x_tenant_key: Optional[str] = Header(d
     voice = req.voice or os.getenv("VOICE_ID", "")
     if not req.text.strip():
         raise HTTPException(400, "text required")
-    key = _cache_key_simple(req.text, voice)
+    prepared = enhance_prosody(preprocess_for_tts(req.text))
+    key = _cache_key_simple(prepared, voice)
     outp = _mp3_path(key)
     created = False
     with _precache_lock:
         if not outp.exists():
             # synth_to_file should call ElevenLabs and write MP3 to outp
-            url = await elevenlabs_tts_to_file(req.text, voice, outp)  # <-- use your existing function name
+            url = await elevenlabs_tts_to_file(prepared, voice, outp)  # <-- use your existing function name
             created = True
     return {"ok": True, "created": created, "audioUrl": f"/cache/{outp.name}"}
 
 @app.get("/precache_status")
 def precache_status(text: str, voice: Optional[str] = None):
     voice = voice or os.getenv("VOICE_ID", "")
-    key = _cache_key_simple(text, voice)
+    prepared = enhance_prosody(preprocess_for_tts(text))
+    key = _cache_key_simple(prepared, voice)
     outp = _mp3_path(key)
     return {"ok": True, "exists": outp.exists(), "audioUrl": f"/cache/{outp.name}" if outp.exists() else None}
 
@@ -1234,8 +1271,9 @@ def stream_with_cache(text: str, voice: str, model: str,
                       tenant_id: str | None = None):
     metrics["tts_requests"] += 1
     clean = preprocess_for_tts(text)
+    tts_input = enhance_prosody(clean)
 
-    key  = _cache_key(clean, voice, model, stability, similarity, style, speaker_boost, opt_latency)
+    key  = _cache_key(tts_input, voice, model, stability, similarity, style, speaker_boost, opt_latency)
     path = os.path.join(CACHE_DIR, f"{key}.mp3")
     if os.path.exists(path):
         metrics["tts_cache_hits"] += 1
@@ -1254,7 +1292,7 @@ def stream_with_cache(text: str, voice: str, model: str,
         "Content-Type": "application/json",
     }
     payload = {
-        "text": clean,
+        "text": tts_input,
         "model_id": model,
         "optimize_streaming_latency": int(opt_latency),
         "voice_settings": {
@@ -1668,7 +1706,8 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
     async def multi():
         for i, part in enumerate(parts):
             try:
-                data = await tts_bytes(part, voice or VOICE_ID, model or MODEL_ID)
+                processed_part = enhance_prosody(preprocess_for_tts(part))
+                data = await tts_bytes(processed_part, voice or VOICE_ID, model or MODEL_ID)
                 # yield the whole chunk as one piece (or slice into smaller pieces if you prefer)
                 yield data
             except Exception as e:

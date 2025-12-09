@@ -231,6 +231,15 @@
   color: var(--ea-ink-soft);
 }
 
+.ea-demo-body {
+  text-align: left;
+  margin-top: 16px;
+}
+
+.ea-demo-body p {
+  text-align: left;
+}
+
 .ea-article-body {
   text-align: left;
   margin-top: 16px;

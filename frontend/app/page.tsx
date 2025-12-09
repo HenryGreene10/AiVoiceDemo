@@ -31,7 +31,7 @@ export default function Page() {
         <section id="demo" className="ea-section ea-demo-section">
           <article className="ea-demo-article" data-ail-article>
             <h1 className="ea-demo-title" data-ail-title>
-              Why EasyAudio Makes Your Articles More Impactful (DEMO)
+              Why EasyAudio Makes Your Articles More Impactful
             </h1>
             <p className="ea-demo-author" data-ail-author>
               By Henry Greene
@@ -54,7 +54,7 @@ export default function Page() {
                 A “Listen” button appears under the title, generates the narration, and plays it through the built-in mini-player. If you update the article, the audio updates automatically.
               </p>
               <p>
-                There are no extra steps in your publishing workflow. There is no exporting. There is no uploading of audio files. 
+                There are no extra steps in your publishing workflow. No exporting. No uploading. 
                 Everything runs quietly in the background and keeps all of your articles listenable at scale.
               </p>
             </div>
@@ -70,8 +70,8 @@ export default function Page() {
 
             <div className="ea-plan-row">
               <div className="ea-plan ea-plan--highlight">
-                <div className="ea-plan-name ea-pricing-plan-title">Free Trial</div>
-                <div className="ea-plan-desc"><br />Try a week free!</div>
+                <div className="ea-plan-name ea-pricing-plan-title">One Week Free Trial</div>
+                <div className="ea-plan-desc"><br />Try a 7 days free!</div>
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$0</span>
                 </div>
