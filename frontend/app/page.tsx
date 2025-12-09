@@ -31,7 +31,7 @@ export default function Page() {
         <section id="demo" className="ea-section ea-demo-section">
           <article className="ea-demo-article" data-ail-article>
             <h1 className="ea-demo-title" data-ail-title>
-              Why EasyAudio Makes Your Articles More Impactful
+              Why EasyAudio Makes Your Articles More Impactful (DEMO)
             </h1>
             <p className="ea-demo-author" data-ail-author>
               By Henry Greene
@@ -47,20 +47,15 @@ export default function Page() {
 
             <div className="ea-demo-body" data-ail-body>
               <p>
-                Readers love audio versions of articles. They spend more time on your site, remain engaged longer, and
-                share articles more frequently when they can listen instead while they read.
+                Readers love audio versions of articles. They spend more time on your site, stay engaged longer, and share your content more often when they can listen while they read.  
               </p>
               <p>
-                EasyAudio gives you a seamless integration of clean audio voiceovers. By adding a single script to your
-                article template, the pieces on your site instantly become playable. A "Listen" button appears under the
-                title, generates the narration, and plays through our mini-player.
+                EasyAudio makes it effortless to add clean and natural voiceovers. When you add a single script to your page, every article on your site becomes instantly playable. 
+                A “Listen” button appears under the title, generates the narration, and plays it through the built-in mini-player. If you update the article, the audio updates automatically.
               </p>
               <p>
-                If you update the article, the audio updates automatically and your readers continue to hit play like
-                normal. There are no extra steps in your publishing flow, no exporting or uploading audio files.
-              </p>
-              <p>
-                It simply runs in the background and keeps all of your articles listenable at scale.
+                There are no extra steps in your publishing workflow. There is no exporting. There is no uploading of audio files. 
+                Everything runs quietly in the background and keeps all of your articles listenable at scale.
               </p>
             </div>
           </article>
