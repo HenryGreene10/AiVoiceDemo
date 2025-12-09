@@ -119,6 +119,17 @@
   box-shadow: none;
 }
 
+.ai-mini-root[data-state="loading"]{
+  opacity:0.75;
+  pointer-events:none;
+}
+
+.ai-mini-root[data-state="loading"] #mp-play::after{
+  content:'…';
+  font-size:10px;
+  margin-left:4px;
+}
+
 .ail-listen-button-wrapper{
   margin-top:0.5rem;
   margin-bottom:1rem;

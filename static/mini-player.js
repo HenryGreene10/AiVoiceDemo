@@ -238,6 +238,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     wrap = document.createElement('div');
     wrap.id = 'ai-mini';
     wrap.classList.add('ai-mini-root');
+    wrap.setAttribute('data-state','idle');
 
     const card = document.createElement('div');
     card.className = 'ai-card';
@@ -344,10 +345,14 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     wrap.dataset.ailSubtitle = metaSubtitle;
     wrap.dataset.ailHref = metaHref;
 
+    const markReady = () => wrap.setAttribute('data-state','ready');
+    const markLoading = () => wrap.setAttribute('data-state','loading');
+
     if (metaUrl) {
       const lastSrc = audio.dataset?.ailLastSrc || '';
       const isNewSource = lastSrc !== metaUrl;
       if (isNewSource) {
+        markLoading();
         if (audio.__ailStartDelay) {
           clearTimeout(audio.__ailStartDelay);
           audio.__ailStartDelay = null;
@@ -362,6 +367,9 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
         audio.preload = 'auto';
         audio.load();
       }
+      if (!isNewSource) {
+        markReady();
+      }
       const playImmediate = () => {
         audio.play().catch(() => {});
       };
@@ -374,6 +382,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
       };
       const handleReady = () => {
         audio.removeEventListener('canplay', handleReady);
+        markReady();
         if (isNewSource) {
           playWithDelay();
         } else {
@@ -469,6 +478,11 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     // Clear when finished
     audio.addEventListener('ended', ()=>{ setPlayVisual(false); pos.clearIfEnded(); });
 
+    const readyHandler = () => markReady();
+    audio.addEventListener('canplay', readyHandler);
+    audio.addEventListener('playing', readyHandler);
+    audio.addEventListener('error', readyHandler);
+
     // Also try to restore once metadata lands (in addition to early attempt)
     audio.addEventListener('loadedmetadata', ()=> restorePosition(pos.load()));
 
@@ -481,6 +495,9 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     setPlayVisual(!audio.paused);
     setProgress();
     wrap.classList.add('show');
+    if (wrap.getAttribute('data-state') !== 'loading') {
+      wrap.setAttribute('data-state','ready');
+    }
 
     // Hide pill on open, show on close
     hideFab(true);           // make the Listen pill go away immediately
@@ -500,6 +517,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
         audio.__ailStartDelay = null;
       }
       wrap.classList.remove('show');
+      wrap.setAttribute('data-state','idle');
       document.getElementById('ai-overlay')?.classList.remove('show');
       stopFabObserver();       // stop watching
       showFab();               // bring the Listen pill back

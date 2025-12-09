@@ -280,7 +280,15 @@ function findArticleRoot() {
 
   function findArticleContext() {
     const root = findArticleRoot();
-    if (!root) return { root: null, heading: null, placementTarget: null };
+    if (!root) {
+      return {
+        root: null,
+        heading: null,
+        placementTarget: null,
+        byline: null,
+        firstBodyBlock: null,
+      };
+    }
 
     let heading = root.querySelector("h1") || root.querySelector("h2");
 
@@ -296,6 +304,10 @@ function findArticleRoot() {
       }
     }
 
+    const byline =
+      root.querySelector("[itemprop='author'], .byline, [data-type='byline'], [data-testid='author']") ||
+      root.querySelector(".Article__subtitle, .metadata__byline");
+
     let placementTarget = null;
     if (heading) {
       const headerLike = heading.closest(
@@ -304,7 +316,18 @@ function findArticleRoot() {
       placementTarget = headerLike || heading.parentElement || heading;
     }
 
-    return { root, heading, placementTarget };
+    let firstBodyBlock = null;
+    const searchScope = (byline && (byline.parentElement || root)) || root;
+    if (searchScope) {
+      firstBodyBlock = searchScope.querySelector(
+        "p, .article__content p, .body-text p, section, div"
+      );
+      if (firstBodyBlock && !(firstBodyBlock.textContent || "").trim()) {
+        firstBodyBlock = null;
+      }
+    }
+
+    return { root, heading, placementTarget, byline, firstBodyBlock };
   }
 
   function describeNode(node) {
@@ -555,7 +578,7 @@ function findArticleRoot() {
           return;
         }
 
-        const { root, placementTarget } = findArticleContext();
+        const { root, placementTarget, firstBodyBlock } = findArticleContext();
 
         const srcBase = (scriptEl && scriptEl.src) || location.href;
         ensureMiniStyles(srcBase);
@@ -585,6 +608,14 @@ function findArticleRoot() {
         wrapper.appendChild(btn);
         if (previousWrapper && previousWrapper !== wrapper) {
           previousWrapper.remove();
+        }
+
+        if (firstBodyBlock && firstBodyBlock.parentElement) {
+          firstBodyBlock.parentElement.insertBefore(wrapper, firstBodyBlock);
+          ailArticleRoot = root;
+          markArticleDetectionComplete();
+          logAIL("Listen button attached before first body block:", describeNode(firstBodyBlock));
+          return;
         }
 
         if (placementTarget) {

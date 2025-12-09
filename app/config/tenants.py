@@ -12,10 +12,10 @@ def _default_max_renders() -> int:
 def _default_max_chars_per_article() -> int:
     """
     Approximate per-article text cap for trial tenants.
-    ~20 minutes of audio at ~750 characters/minute ≈ 15,000 chars.
+    ~10 minutes of audio at ~750-800 characters/minute ≈ 8,000 chars.
     This is a soft limit used to truncate over-long trial articles.
     """
-    return int(os.getenv("TENANT_DEFAULT_MAX_CHARS_PER_ARTICLE", "15000"))
+    return int(os.getenv("TENANT_DEFAULT_MAX_CHARS_PER_ARTICLE", "8000"))
 
 
 def _base_tenants() -> Dict[str, Dict[str, Any]]:
@@ -25,7 +25,7 @@ def _base_tenants() -> Dict[str, Dict[str, Any]]:
         },
         "trial": {
             "max_renders_per_day": 75,
-            # Per-article soft cap for trial tenants (~20 minutes of audio).
+            # Per-article soft cap for trial tenants (~10 minutes of audio).
             "max_chars_per_article": _default_max_chars_per_article(),
         },
         # Example of how we'll add paying customers later:
