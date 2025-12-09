@@ -1,7 +1,7 @@
-# 🎧 AI Listen  
+# EasyAudio 
 Turn every article on your site into audio with *one script tag.*
 
-AI Listen adds a **Listen** button and a clean **mini-player** to every article on your site.  
+EasyAudio adds a **Listen** button and a clean **mini-player** to every article on your site.  
 No exporting MP3s, no uploads, no changing your publishing workflow.
 
 Paste one script tag → we do the rest.
@@ -28,9 +28,6 @@ Paste one script tag → we do the rest.
    - Your page sends the article URL to the AI Listen backend.
    - We generate narration using a high-quality TTS engine (cached forever).
    - The mini-player appears and plays the audio immediately.
-4. Subsequent visitors get **instant** playback from cache.
-
-**You focus on writing — we handle the entire audio pipeline.**
 
 ---
 
@@ -40,9 +37,9 @@ Paste this once into your site layout (above `</body>`):
 
 ```html
 <script
-  src="https://YOUR-BACKEND-DOMAIN/static/tts-widget.v1.js"
-  data-ail-api-base="https://YOUR-BACKEND-DOMAIN"
-  data-ail-tenant="YOUR_SITE_SLUG"
+  src="https://hgtts.onrender.com/static/tts-widget.v1.js"
+  data-ail-api-base="https://hgtts.onrender.com"
+  data-ail-tenant="_____"
   defer
 ></script>
 ```
