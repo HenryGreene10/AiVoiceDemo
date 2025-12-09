@@ -20,6 +20,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   const scriptData = (scriptEl && scriptEl.dataset) || {};
   const apiBase = scriptData.ailApiBase || window.location.origin;
   const tenant = scriptData.ailTenant || "default";
+  const scriptHasTenant = !!scriptData.ailTenant;
   const AIL_CONFIG = { apiBase, tenant };
 
   // --- meta helpers ---
@@ -215,6 +216,59 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     return list[0];
   }
 
+  function nodeTextLength(el) {
+    return (el?.innerText || el?.textContent || "").replace(/\s+/g, " ").trim().length;
+  }
+
+  function findArticleRoot() {
+    const explicit = getExplicitArticle();
+    if (explicit) return explicit;
+
+    const selectors = [
+      "article",
+      "main article",
+      "main",
+      '[role="main"]',
+      ".post-content, .entry-content, .article-body, .blog-post, .post-body"
+    ];
+    const firstHeading = document.querySelector("h1");
+
+    for (const selector of selectors) {
+      const matches = Array.from(document.querySelectorAll(selector)).filter(
+        (node) => node && node.nodeType === 1
+      );
+      if (!matches.length) continue;
+
+      const scored = matches
+        .map((node) => ({
+          node,
+          hasHeading: !!(firstHeading && node.contains(firstHeading)),
+          length: nodeTextLength(node)
+        }))
+        .filter((entry) => entry.length > 20);
+
+      if (!scored.length) continue;
+
+      const preferred = scored.filter((entry) => entry.hasHeading);
+      const pool = preferred.length ? preferred : scored;
+      pool.sort((a, b) => b.length - a.length);
+      return pool[0].node;
+    }
+
+    return null;
+  }
+
+  function describeNode(node) {
+    if (!node || !node.tagName) return "unknown";
+    let desc = node.tagName.toLowerCase();
+    if (node.id) desc += `#${node.id}`;
+    const classes = Array.from(node.classList || []).slice(0, 2);
+    if (classes.length) desc += `.${classes.join(".")}`;
+    const role = node.getAttribute?.("role");
+    if (role) desc += `[role=${role}]`;
+    return desc;
+  }
+
   function extractArticleParts(listenButton) {
     let article = getExplicitArticle();
 
@@ -223,7 +277,7 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
         article = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
       }
       if (!article) {
-        article = document.querySelector("article,[itemtype*='Article'],[role='main'],main");
+        article = findArticleRoot();
       }
     }
 
@@ -289,6 +343,9 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
         apiBase: effectiveApiBase.replace(/\/+$/, ""),
         tenant: effectiveTenant
       };
+      const autoInsertEnabled = Boolean(
+        (opts.tenant && String(opts.tenant).trim()) || scriptHasTenant
+      );
 
       window._AIL_DEBUG = { base: runtimeConfig.apiBase, tenant: runtimeConfig.tenant };
 
@@ -367,9 +424,42 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
           return;
         }
 
-        // NOTE: This block previously auto-injected a Listen button directly after the first <h1>.
-        // To avoid surprise duplicates, the widget now leaves the DOM untouched when no trigger exists.
-        console.debug("[AIL] No .ail-listen trigger found; skipping auto-insert");
+        if (!autoInsertEnabled) {
+          console.debug("[AIL] No .ail-listen trigger found; auto-insert disabled (no tenant).");
+          return;
+        }
+
+        const articleRoot = findArticleRoot();
+        if (!articleRoot) {
+          console.warn("[AIL] No suitable article root found; Listen button not injected.");
+          return;
+        }
+
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.id = "ai-listen-btn";
+        btn.classList.add("listen-btn", "ail-listen");
+        if (className) btn.classList.add(className);
+        btn.textContent = labelIdle;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "ail-listen-auto";
+        wrapper.appendChild(btn);
+
+        const directHeading = Array.from(articleRoot.children || []).find((child) =>
+          /^H[1-6]$/i.test(child.tagName)
+        );
+        const fallbackHeading = articleRoot.querySelector("h1, h2, h3");
+        const headingTarget = directHeading || fallbackHeading;
+
+        if (headingTarget && headingTarget.parentNode) {
+          headingTarget.parentNode.insertBefore(wrapper, headingTarget);
+        } else {
+          articleRoot.insertBefore(wrapper, articleRoot.firstChild);
+        }
+
+        attachListenHandler(btn);
+        console.log("[AIL] Listen button attached near article root:", describeNode(articleRoot));
       }
 
       initListenButton();
