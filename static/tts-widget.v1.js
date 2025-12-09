@@ -149,29 +149,35 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
       body: JSON.stringify(payload || {}),
     });
 
-    const data = await resp.json();
     if (!resp.ok) {
-      const msg =
-        data && (data.detail || data.error || data.message) ||
-        `The page could not be found`;
-      throw new Error(`TTS ${resp.status}: ${msg}`);
+      let msg = "";
+      try {
+        msg = await resp.text();
+      } catch {
+        msg = "article-audio request failed";
+      }
+      throw new Error(`TTS ${resp.status}: ${msg || "article-audio failed"}`);
     }
 
-    // Prefer audio_url/audioUrl/url from the JSON
-    let url = data.audio_url || data.audioUrl || data.url;
-    if (!url) {
-      throw new Error("TTS: no audio URL in response");
+    const blob = await resp.blob();
+    if (window.__AIL_AUDIO_URL) {
+      try {
+        URL.revokeObjectURL(window.__AIL_AUDIO_URL);
+      } catch {}
     }
+    const objectUrl = URL.createObjectURL(blob);
+    window.__AIL_AUDIO_URL = objectUrl;
 
-    // If URL is relative ("/cache/…"), resolve it against apiBase
-    if (!/^https?:\/\//i.test(url)) {
-      url = new URL(url, baseNoSlash + "/").href;
-    }
+    const headers = resp.headers || new Headers();
+    const hash = headers.get("x-ail-hash") || null;
+    const cachedHeader = (headers.get("x-cache") || "").toUpperCase();
+    const cached = cachedHeader === "HIT";
+    console.log("[AIL] article audio blob ready", { hash, cached });
 
     return {
-      url,
-      cached: !!data.cached,
-      hash: data.hash || null,
+      url: objectUrl,
+      cached,
+      hash,
     };
   }
   
