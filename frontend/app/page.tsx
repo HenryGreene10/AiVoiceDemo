@@ -173,45 +173,105 @@ export default function Page() {
         {/* INSTALL */}
         <section id="install" className="ea-section">
           <div className="ea-section-header">
-            <h2 className="ea-section-title">Install in 30 Seconds</h2>
+            <h2 className="ea-section-title">Install EasyAudio in 30 Seconds</h2>
             <p className="ea-section-subtitle">
-              EasyAudio installs with a single HTML snippet added to your article template. Prefer
-              someone else to wire it up? We&apos;ll set it up for you for free.
+              EasyAudio is designed to be installed by anyone who's ever added analytics or a script
+              tag. If you can paste one line of code into your site template, you can install EasyAudio.
             </p>
+            <p className="ea-section-subtitle">No plugin. No uploads. No engineering project.</p>
           </div>
 
           <div className="ea-install-card">
-            <button
-              type="button"
-              className="ea-plan-cta"
-              data-tally-open="XxLqkV"
-              data-tally-emoji-text="👋"
-              data-tally-emoji-animation="wave"
-            >
-              Get Free Installation
-            </button>
-            <details style={{ marginTop: 16 }}>
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Developer snippet</summary>
-              <pre
-                style={{
-                  overflowX: "auto",
-                  padding: "10px 12px",
-                  background: "#1a1c1a",
-                  color: "#f3dfc1",
-                  border: "2px solid #e0c9a6",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
-                  marginTop: 12,
-                }}
-              >{`<script
-  src="https://hgtts.onrender.com/static/tts-widget.v1.js"
-  data-ail-api-base="https://hgtts.onrender.com"
-  data-ail-tenant="_____"
-  defer
-></script>
-<button data-ail-listen>Listen</button>`}</pre>
-            </details>
+            <div>
+              <h3 className="ea-section-subtitle" style={{ fontSize: 20, fontWeight: 600 }}>
+                How installation works
+              </h3>
+              <ol>
+                <li>
+                  <strong>Start your free trial</strong>
+                  <p>
+                    After checkout, we email you a unique tenant key and your ready-made snippet.
+                  </p>
+                </li>
+                <li>
+                  <strong>Paste one snippet into your template</strong>
+                  <p>
+                    Add the script to your site's layout or theme file, where you'd normally place
+                    analytics or other third-party scripts.
+                  </p>
+                </li>
+                <li>
+                  <strong>Publish your site</strong>
+                  <p>
+                    Visit any article—the Listen button appears under the title, and your mini-player
+                    pops up when readers press play.
+                  </p>
+                </li>
+              </ol>
+              <p style={{ marginTop: 16 }}>
+                That's it. Every article on your site now has a high-quality audio version,
+                automatically.
+              </p>
+            </div>
+
+            <div style={{ marginTop: 32 }}>
+              <h3 className="ea-section-subtitle" style={{ fontSize: 20, fontWeight: 600 }}>
+                Not technical? We'll install it with you.
+              </h3>
+              <p>
+                If you don't manage your site template yourself, installation still isn't a blocker:
+              </p>
+              <ul style={{ margin: "12px 0 0 18px" }}>
+                <li>Forward our install email to your developer, or</li>
+                <li>Book a free 10-minute installation call and we'll do it together on Zoom.</li>
+              </ul>
+              <a
+                href="https://calendly.com/henry10greene/30min"
+                className="ea-plan-cta"
+                style={{ display: "inline-block", marginTop: 16 }}
+              >
+                Get free installation help
+              </a>
+              <p style={{ marginTop: 12 }}>
+                We'd rather spend 10 minutes helping you install than lose you because the code looks
+                scary.
+              </p>
+            </div>
+
+            <div style={{ marginTop: 32 }}>
+              <details open>
+                <summary style={{ cursor: "pointer", fontWeight: 600 }}>Developer snippet</summary>
+                <p style={{ marginTop: 12 }}>
+                  If you're a developer, here's the exact snippet your install email will include
+                  (with your tenant key filled in):
+                </p>
+                <pre
+                  style={{
+                    overflowX: "auto",
+                    padding: "10px 12px",
+                    background: "#1a1c1a",
+                    color: "#f3dfc1",
+                    border: "2px solid #e0c9a6",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
+                    marginTop: 12,
+                  }}
+                >{`<script
+  data-ail-api-base="https://easyaudio.app"
+  data-ail-tenant="YOUR_TENANT_KEY_HERE"
+  src="https://easyaudio.app/static/tts-widget.v1.js">
+</script>`}</pre>
+                <p style={{ marginTop: 12 }}>
+                  Place this in your global template or just before &lt;/body&gt; so it loads on every
+                  article page.
+                </p>
+                <p style={{ marginTop: 12 }}>
+                  If you accidentally break anything while installing EasyAudio, we'll help you fix it.
+                  Just reply to your welcome email and we'll jump in.
+                </p>
+              </details>
+            </div>
           </div>
         </section>
         </div>

@@ -15,11 +15,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <Script
-          src="https://tally.so/widgets/embed.js"
-          strategy="beforeInteractive"
-          async
-        />
       </head>
       <body className="ea-body">
         {children}
