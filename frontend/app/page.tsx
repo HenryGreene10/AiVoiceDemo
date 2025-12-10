@@ -97,15 +97,14 @@ export default function Page() {
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$9</span>/month
                 </div>
-                <button
-                  type="button"
+                <a
+                  href="https://buy.stripe.com/fZu7sLgjy83M4B15dbcQU02"
                   className="ea-plan-cta"
-                  data-tally-open="XxLqkV"
-                  data-tally-emoji-text="👋"
-                  data-tally-emoji-animation="wave"
+                  target="_blank"
+                  rel="noreferrer"
                 >
                   Get Access
-                </button>
+                </a>
                 <ul className="ea-plan-features">
                   <li>Up to 100 article renders / month</li>
                   <li>EasyAudio mini-player on one site</li>
@@ -119,53 +118,20 @@ export default function Page() {
                 <div className="ea-plan-price ea-pricing-price">
                   <span className="ea-plan-price-amount">$29</span>/month
                 </div>
-                <button
-                  type="button"
+                <a
+                  href="https://buy.stripe.com/00w6oH1oE4RA6J95dbcQU01"
                   className="ea-plan-cta"
-                  data-tally-open="XxLqkV"
-                  data-tally-emoji-text="👋"
-                  data-tally-emoji-animation="wave"
+                  target="_blank"
+                  rel="noreferrer"
                 >
                   Get Access
-                </button>
+                </a>
                 <ul className="ea-plan-features">
                   <li>Up to 500 article renders / month</li>
                   <li>Mini-player on up to 3 sites</li>
                   <li>Priority support</li>
                 </ul>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="ea-section">
-          <div className="ea-section-header">
-            <h2 className="ea-section-title">Why Publishers Use EasyAudio</h2>
-          </div>
-          <div className="ea-why-table">
-            <div className="ea-why-card">
-              <strong>A single script</strong>
-              <p>One embed lights up a Listen button across every article template.</p>
-            </div>
-            <div className="ea-why-card">
-              <strong>Automatic narration</strong>
-              <p>We extract clean text, generate narration, and cache it for you.</p>
-            </div>
-            <div className="ea-why-card">
-              <strong>Predictable costs</strong>
-              <p>Pay once per new article render instead of every playback.</p>
-            </div>
-            <div className="ea-why-card">
-              <strong>Works everywhere</strong>
-              <p>Mobile, desktop, and tablet players load instantly with no extensions.</p>
-            </div>
-            <div className="ea-why-card">
-              <strong>On-brand player</strong>
-              <p>The inline mini-player adopts your fonts and palette automatically.</p>
-            </div>
-            <div className="ea-why-card">
-              <strong>Zero maintenance</strong>
-              <p>No file exporting or uploads. Update an article and the audio updates too.</p>
             </div>
           </div>
         </section>
@@ -245,6 +211,38 @@ export default function Page() {
               >
                 Get free installation help
               </a>
+            </div>
+          </div>
+        </section>
+
+        <section className="ea-section">
+          <div className="ea-section-header">
+            <h2 className="ea-section-title">Why Publishers Use EasyAudio</h2>
+          </div>
+          <div className="ea-why-table">
+            <div className="ea-why-card">
+              <strong>A single script</strong>
+              <p>One embed lights up a Listen button across every article template.</p>
+            </div>
+            <div className="ea-why-card">
+              <strong>Automatic narration</strong>
+              <p>We extract clean text, generate narration, and cache it for you.</p>
+            </div>
+            <div className="ea-why-card">
+              <strong>Predictable costs</strong>
+              <p>Pay once per new article render instead of every playback.</p>
+            </div>
+            <div className="ea-why-card">
+              <strong>Works everywhere</strong>
+              <p>Mobile, desktop, and tablet players load instantly with no extensions.</p>
+            </div>
+            <div className="ea-why-card">
+              <strong>On-brand player</strong>
+              <p>The inline mini-player adopts your fonts and palette automatically.</p>
+            </div>
+            <div className="ea-why-card">
+              <strong>Zero maintenance</strong>
+              <p>No file exporting or uploads. Update an article and the audio updates too.</p>
             </div>
           </div>
         </section>

@@ -16,8 +16,9 @@
   margin: 0;
   padding: 0;
   font-family: "Courier New", monospace;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 400;
+  line-height: 1.6;
   background-color: var(--ea-bg);
   color: var(--ea-ink);
   min-height: 100vh;
@@ -187,8 +188,9 @@
 
 .ea-section-subtitle {
   margin-top: 6px;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.6;
   color: var(--ea-ink-soft);
 }
 
@@ -313,10 +315,21 @@
 }
 
 .ea-install-card p {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--ea-ink-soft);
+}
+
+.ea-install-card ol li {
   font-size: 15px;
   font-weight: 500;
   line-height: 1.6;
   color: var(--ea-ink-soft);
+}
+
+.ea-install-card ol li p {
+  margin: 0;
 }
 
 .ea-plan {
@@ -461,8 +474,9 @@
 
 .ea-why-card p {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.6;
   color: var(--ea-ink-soft);
 }
 
