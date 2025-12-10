@@ -87,10 +87,10 @@ export default function Page() {
                   Start free trial
                 </a>
                 <ul className="ea-plan-features">
-                  <li>
-                    For authors, bloggers, and small sites. Up to 2 hours of unique audio renders per
-                    month. Unlimited playback. Complimentary installation and 24/7 email support.
-                  </li>
+                  <li>For authors, bloggers, and small sites</li>
+                  <li>Up to 2 hours of unique audio renders per month</li>
+                  <li>Unlimited playback</li>
+                  <li>Complimentary installation and 24/7 email support</li>
                 </ul>
               </div>
 
@@ -109,10 +109,10 @@ export default function Page() {
                   Start free trial
                 </a>
                 <ul className="ea-plan-features">
-                  <li>
-                    For larger content teams. Up to 10 hours of unique audio renders per month.
-                    Unlimited playback. Complimentary installation and 24/7 email support.
-                  </li>
+                  <li>For larger content teams</li>
+                  <li>Up to 10 hours of unique audio renders per month</li>
+                  <li>Unlimited playback</li>
+                  <li>Complimentary installation and 24/7 email support</li>
                 </ul>
               </div>
 
@@ -131,10 +131,10 @@ export default function Page() {
                   Start free trial
                 </a>
                 <ul className="ea-plan-features">
-                  <li>
-                    For professional publishers. Up to 50 hours of unique audio renders per month.
-                    Unlimited playback. Complimentary installation and priority support.
-                  </li>
+                  <li>For professional publishers</li>
+                  <li>Up to 50 hours of unique audio renders per month</li>
+                  <li>Unlimited playback</li>
+                  <li>Complimentary installation and priority support</li>
                 </ul>
               </div>
             </div>
