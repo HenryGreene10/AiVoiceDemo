@@ -106,9 +106,10 @@ export default function Page() {
                   Get Access
                 </a>
                 <ul className="ea-plan-features">
-                  <li>Up to 100 article renders / month</li>
-                  <li>EasyAudio mini-player on one site</li>
-                  <li>Email support</li>
+                  <li>
+                    For authors, bloggers, and small sites. Up to 2 hours of unique audio renders per
+                    month. Unlimited playback. Complimentary installation and 24/7 email support.
+                  </li>
                 </ul>
               </div>
 
@@ -127,9 +128,10 @@ export default function Page() {
                   Get Access
                 </a>
                 <ul className="ea-plan-features">
-                  <li>Up to 500 article renders / month</li>
-                  <li>Mini-player on up to 3 sites</li>
-                  <li>Priority support</li>
+                  <li>
+                    For larger content teams. Up to 10 hours of unique audio renders per month.
+                    Unlimited playback. Complimentary installation and 24/7 email support.
+                  </li>
                 </ul>
               </div>
             </div>
