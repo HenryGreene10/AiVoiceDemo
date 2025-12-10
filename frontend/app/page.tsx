@@ -66,31 +66,12 @@ export default function Page() {
           <div className="ea-pricing-shell">
             <div className="ea-section-header">
               <h2 className="ea-section-title">Simple Pricing for a Simple Player</h2>
+              <p className="ea-section-subtitle">
+                Every plan includes a 7-day free trial. Try EasyAudio on your site, cancel anytime.
+              </p>
             </div>
 
             <div className="ea-plan-row">
-              <div className="ea-plan ea-plan--highlight">
-                <div className="ea-plan-name ea-pricing-plan-title">One Week Free Trial</div>
-                <div className="ea-plan-desc"><br />Try a 7 days free!</div>
-                <div className="ea-plan-price ea-pricing-price">
-                  <span className="ea-plan-price-amount">$0</span>
-                </div>
-                <button
-                  type="button"
-                  className="ea-plan-cta"
-                  data-tally-open="XxLqkV"
-                  data-tally-emoji-text="👋"
-                  data-tally-emoji-animation="wave"
-                >
-                  Get Access
-                </button>
-                <ul className="ea-plan-features">
-                  <li>Up to 10 article renders</li>
-                  <li>EasyAudio mini-player on one site</li>
-                  <li>Email support</li>
-                </ul>
-              </div>
-
               <div className="ea-plan ea-plan--highlight">
                 <div className="ea-plan-name ea-pricing-plan-title">Starter</div>
                 <div className="ea-plan-desc">For personal blogs &amp; small newsletters.</div>
@@ -103,7 +84,7 @@ export default function Page() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Get Access
+                  Start free trial
                 </a>
                 <ul className="ea-plan-features">
                   <li>
@@ -125,12 +106,34 @@ export default function Page() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Get Access
+                  Start free trial
                 </a>
                 <ul className="ea-plan-features">
                   <li>
                     For larger content teams. Up to 10 hours of unique audio renders per month.
                     Unlimited playback. Complimentary installation and 24/7 email support.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="ea-plan ea-plan--highlight">
+                <div className="ea-plan-name ea-pricing-plan-title">Newsroom</div>
+                <div className="ea-plan-desc">For professional publishers and newsrooms.</div>
+                <div className="ea-plan-price ea-pricing-price">
+                  <span className="ea-plan-price-amount">$99</span>/month
+                </div>
+                <a
+                  href="https://buy.stripe.com/8x2aEX8R6bfY0kL9trcQU00"
+                  className="ea-plan-cta"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Start free trial
+                </a>
+                <ul className="ea-plan-features">
+                  <li>
+                    For professional publishers. Up to 50 hours of unique audio renders per month.
+                    Unlimited playback. Complimentary installation and priority support.
                   </li>
                 </ul>
               </div>
