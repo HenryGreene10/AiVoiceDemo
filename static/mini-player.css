@@ -26,6 +26,7 @@
   --mp-center-nudge-y: 0px;
   --mp-side-nudge-x: -6px;
   --mp-side-nudge-y: 0px;
+  --ai-mini-pad: 140px;
 }
 
 /* Title: true ellipsis */
@@ -55,6 +56,7 @@
   border-radius: 0;
   box-shadow: none;
   font-family: var(--mp-font);
+  box-sizing: border-box;
 }
 .ai-mini-root.show{ transform: translateY(0) scale(1); opacity:1; }
 .ai-mini-root.hidden{ pointer-events:none; }
@@ -64,23 +66,66 @@
 }
 
 @media (max-width: 768px){
+  :root{
+    --ai-mini-pad: 110px;
+  }
   .ai-mini-root{
     left: 0;
     right: 0;
     bottom: 0;
+    width: auto;
+    max-width: 100vw;
+    margin: 0;
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    box-sizing: border-box;
+    --mp-gap-top: 8px;
+    --mp-gap-bottom: 0px;
+    --mp-controls-gap: 0px;
+    --mp-btn-center: 52px;
+    --mp-btn-side: 44px;
+    --mp-icon-center: 26px;
+    --mp-icon-side: 36px;
+    --mp-track-h: 3px;
+    --mp-knob: 8px;
+  }
+  .ai-mini-root .ai-card{
     width: 100%;
     max-width: 100%;
     border-radius: 16px 16px 0 0;
+    padding: 10px 12px 8px;
   }
-  .ai-mini-root .ai-card{
-    border-radius: 16px;
-    padding: 12px 14px 10px;
+  .ai-mini-root .ai-meter{
+    padding: 4px 0 0;
+  }
+  .ai-mini-root .ai-controls{
+    gap: 16px;
+    padding: 4px 0 0;
+  }
+  .ai-mini-root .ai-footer{
+    padding: 2px 0 4px;
+    margin-top: 4px;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+  .ai-mini-root .ai-rate{
+    font-size: 12px;
   }
   .ai-mini-root .ai-title{
     font-size: 14px;
   }
   .ai-mini-root .ai-timebar{
     font-size: 11px;
+  }
+  .ai-mini-root .ai-btn{
+    border-radius: 12px;
+  }
+  .ai-mini-root .ai-btn.side svg,
+  .ai-mini-root .ai-btn.side img{
+    width: 20px;
+    height: 20px;
   }
 }
 
@@ -144,7 +189,6 @@
 /* 5) Mobile niceties */
 @media (max-width: 480px){
   #ai-listen-btn{ padding: 8px 12px; font-size:14px; }
-  .ai-card{ width: min(96vw, 420px); }
 }
 
  
@@ -214,7 +258,6 @@ body:has(.ai-mini-root.show) [data-ai-fab]{
 /* 6) MOBILE niceties */
 @media (max-width: 480px){
   .listen-btn{ padding: 8px 12px; font-size: 14px; }
-  .ai-card{ width: min(96vw, 420px); }
 }
 
 /* Card */
