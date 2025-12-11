@@ -83,6 +83,9 @@
     box-sizing: border-box;
     position: fixed;
     z-index: 999998;
+    background: transparent;
+    border: none;
+    box-shadow: none;
     --mp-gap-top: 8px;
     --mp-gap-bottom: 0px;
     --mp-controls-gap: 0px;
@@ -96,8 +99,11 @@
   .ai-mini-root .ai-card{
     width: 100%;
     max-width: 100%;
-    border-radius: 16px 16px 0 0;
+    border-radius: 20px;
     padding: 10px 12px 8px;
+    background: var(--mp-bg);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.14);
+    border: 1px solid var(--mp-border);
   }
   .ai-mini-root .ai-meter{
     padding: 4px 0 0;
