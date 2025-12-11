@@ -373,26 +373,12 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
       const playImmediate = () => {
         audio.play().catch(() => {});
       };
-      const playWithDelay = () => {
-        clearTimeout(audio.__ailStartDelay);
-        audio.__ailStartDelay = window.setTimeout(() => {
-          try { audio.currentTime = 0; } catch {}
-          playImmediate();
-        }, 1000); // buffer a beat to avoid clipping the first word
-      };
-      const handleReady = () => {
-        audio.removeEventListener('canplay', handleReady);
+      if (isNewSource) {
+        try { audio.currentTime = 0; } catch {}
+      }
+      playImmediate();
+      if (!isNewSource && audio.readyState >= 2) {
         markReady();
-        if (isNewSource) {
-          playWithDelay();
-        } else {
-          playImmediate();
-        }
-      };
-      if (audio.readyState >= 2) {
-        handleReady();
-      } else {
-        audio.addEventListener('canplay', handleReady);
       }
     }
 
