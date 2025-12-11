@@ -501,9 +501,6 @@ body.ai-mini-open,
 /* EasyAudio demo: higher contrast + full outline */
 .ai-mini-root {
   box-sizing: border-box;
-  border-radius: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.28);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
 /* Make time labels and rate text solid black for readability */
@@ -570,3 +567,64 @@ body.ai-mini-open,
 }
 
  
+/* === FINAL MINI-PLAYER LAYOUT & SHELL CLEANUP === */
+
+/* Make the outer shell invisible everywhere */
+.ai-mini-root {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ai-mini-root::before,
+.ai-mini-root::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Desktop / default: bottom-right floating card with cushion */
+@media (min-width: 769px) {
+  .ai-mini-root {
+    position: fixed;
+    z-index: 9999;
+    bottom: calc(32px + env(safe-area-inset-bottom));
+    right: 32px;
+    left: auto;
+    width: auto;
+    max-width: min(360px, 100vw - 64px); /* 32px padding on each side at most */
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  .ai-mini-root .ai-card {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;             /* card fully inside the shell */
+  }
+}
+
+/* Mobile: centered bottom bar with equal padding and no ghost box */
+@media (max-width: 768px) {
+  .ai-mini-root {
+    position: fixed;
+    z-index: 9999;
+    left: 0;
+    right: 0;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: 100%;
+    margin: 0;
+    padding: 0 16px;        /* equal inset on left and right */
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .ai-mini-root .ai-card {
+    width: 100%;
+    max-width: 360px;       /* don’t get too wide */
+    margin: 0 auto;         /* center the card in the shell */
+  }
+}
