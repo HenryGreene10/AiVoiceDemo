@@ -517,4 +517,47 @@ body.ai-mini-open,
   color: #000;
 }
 
+/* ==== FINAL POSITIONING OVERRIDES (desktop + mobile) ==== */
+
+/* Desktop / default: bottom-right floating card, never clipped */
+.ai-mini-root {
+  position: fixed;
+  z-index: 9999;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  right: 24px;
+  left: auto;
+  width: min(360px, 100vw - 48px);
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* The visible card just fills the wrapper on desktop */
+.ai-mini-root .ai-card {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+}
+
+/* Mobile: bottom-centered bar with equal padding left/right */
+@media (max-width: 768px) {
+  .ai-mini-root {
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    width: 100vw;
+    max-width: 100vw;
+    margin: 0;
+    padding: 0 12px;              /* equal inset on both sides */
+    box-sizing: border-box;
+  }
+
+  .ai-mini-root .ai-card {
+    width: 100%;
+    max-width: 480px;             /* don’t get too wide */
+    margin: 0 auto;               /* center the card */
+  }
+}
+
  
