@@ -466,6 +466,7 @@ function findArticleRoot() {
         btn.addEventListener("click", async (ev) => {
           ev.preventDefault();
           console.log("[AIL] Listen click");
+          console.log("[AIL] Listen handler fired", { buttonId: btn.id || null });
 
           try {
             const srcBase = (scriptEl && scriptEl.src) || location.href;

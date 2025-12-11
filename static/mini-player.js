@@ -494,6 +494,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     el.textContent    = '0:00';
     setPlayVisual(!audio.paused);
     setProgress();
+    console.log('[AiMini] show mini player', { title: metaTitle, url: metaUrl || null });
     wrap.classList.add('show');
     if (wrap.getAttribute('data-state') !== 'loading') {
       wrap.setAttribute('data-state','ready');
