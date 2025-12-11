@@ -43,17 +43,16 @@
 /* 3) Single mini-player placement (keep ONE copy only) */
 .ai-mini-root{
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  width: 100%;
+  right: 32px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  width: min(360px, calc(100vw - 48px));
   max-width: 100%;
   transform: translateY(120%) scale(.98);
   opacity: 0;
   transition: transform .18s ease, opacity .18s ease;
   z-index: 999998;
   background: transparent;
-  padding: 0 20px;
+  padding: 0;
   border-radius: 0;
   box-shadow: none;
   font-family: var(--mp-font);
@@ -68,8 +67,8 @@
 .ai-mini-root.hidden{ pointer-events:none; }
 .ai-mini-root .ai-card{
   width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
 }
 
 @media (max-width: 768px){
@@ -80,10 +79,10 @@
     left: 0;
     right: 0;
     bottom: calc(12px + env(safe-area-inset-bottom));
-    width: 100%;
-    max-width: 100%;
+    width: auto;
+    max-width: none;
     margin: 0;
-    padding: 0 12px;
+    padding: 0 16px;
     background: transparent;
     border: 0;
     box-shadow: none;
@@ -100,6 +99,7 @@
   .ai-mini-root .ai-card{
     width: 100%;
     max-width: 100%;
+    margin: 0 auto;
     border-radius: 18px;
     padding: 10px 12px 8px;
     box-shadow: 0 12px 28px rgba(0,0,0,0.14);
