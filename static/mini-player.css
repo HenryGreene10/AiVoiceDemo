@@ -628,3 +628,45 @@ body.ai-mini-open,
     margin: 0 auto;         /* center the card in the shell */
   }
 }
+/* FINAL OVERRIDES (place at end of file) */
+.ai-mini-root {
+  position: fixed;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  right: 24px;
+  left: auto;
+  width: auto;
+  max-width: none;
+  padding: 0;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.ai-mini-root .ai-card {
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+  border-radius: 18px;
+}
+
+/* MOBILE: center with equal padding */
+@media (max-width: 768px) {
+  .ai-mini-root {
+    left: 0;
+    right: 0;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    padding: 0 16px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .ai-mini-root .ai-card {
+    margin: 0 auto;
+    max-width: 100%;
+    border-radius: 18px;
+  }
+}
+
+/* TIGHTEN CARD INTERNAL PADDING SO X BUTTON ALWAYS FITS */
+.ai-card {
+  padding: 12px 16px 14px;
+}
