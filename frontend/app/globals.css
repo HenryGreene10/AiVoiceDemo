@@ -247,6 +247,13 @@
   margin-top: 16px;
 }
 
+.ea-demo-listen-row {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  text-align: left;
+}
+
 
 .ea-article-header {
   margin-bottom: 18px;

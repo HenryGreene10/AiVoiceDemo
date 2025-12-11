@@ -36,14 +36,16 @@ export default function Page() {
             <p className="ea-demo-author" data-ail-author>
               By Henry Greene
             </p>
-            <button
-              type="button"
-              id="ail-listen-btn"
-              className="ea-listen-button ea-demo-listen-btn listen-btn ail-listen"
-              data-ail-listen="true"
-            >
-              LISTEN
-            </button>
+            <div className="ea-demo-listen-row">
+              <button
+                type="button"
+                id="ail-listen-btn"
+                className="ea-listen-button ea-demo-listen-btn listen-btn ail-listen"
+                data-ail-listen="true"
+              >
+                LISTEN
+              </button>
+            </div>
 
             <div className="ea-demo-body" data-ail-body>
               <p>
