@@ -59,7 +59,7 @@
   box-sizing: border-box;
   pointer-events: none;
 }
-.ai-mini-root.show{
+.ai-mini-root.ai-open{
   transform: translateY(0) scale(1);
   opacity:1;
   pointer-events:auto;
@@ -250,9 +250,9 @@ button[aria-label="Listen"]:active{
 }
 
 /* 5) DISABLE any global auto-hide rules for FAB while mini is open */
-body:has(.ai-mini-root.show) #ai-fab,
-body:has(.ai-mini-root.show) .ai-fab,
-body:has(.ai-mini-root.show) [data-ai-fab]{
+body:has(.ai-mini-root.ai-open) #ai-fab,
+body:has(.ai-mini-root.ai-open) .ai-fab,
+body:has(.ai-mini-root.ai-open) [data-ai-fab]{
   display: inline-flex !important;   /* keep it visible */
 }
 
@@ -526,10 +526,14 @@ body.ai-mini-open,
   bottom: calc(24px + env(safe-area-inset-bottom));
   right: 24px;
   left: auto;
-  width: min(320px, 100vw - 48px);
-  max-width: 100%;
+  width: auto;
+  max-width: min(360px, 100vw - 48px);
   margin: 0;
   padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   box-sizing: border-box;
 }
 
@@ -543,6 +547,7 @@ body.ai-mini-open,
 /* Mobile: bottom-centered bar with equal padding left/right */
 @media (max-width: 768px) {
   .ai-mini-root {
+    position: fixed;
     bottom: calc(8px + env(safe-area-inset-bottom));
     left: 0;
     right: 0;
@@ -550,6 +555,10 @@ body.ai-mini-open,
     max-width: 100%;
     margin: 0;
     padding: 0 12px;              /* equal inset on both sides */
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
     box-sizing: border-box;
   }
 

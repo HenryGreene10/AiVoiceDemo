@@ -93,6 +93,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
   // Live icon map (can be overridden)
   const ICONS = {...DEFAULT_ICONS};
+  const OPEN_CLASS = 'ai-open';
 
   // Helper: render icon (inline <svg> string OR image URL)
   function renderIcon(btn, icon){
@@ -286,6 +287,11 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
   function bindMini(audio, meta){
     const wrap = ensureMini();
     const q = id => wrap.querySelector(id);
+    const setOpenState = (isOpen) => {
+      wrap.classList.toggle(OPEN_CLASS, isOpen);
+      document.documentElement.classList.toggle('ai-mini-open', isOpen);
+      document.body.classList.toggle('ai-mini-open', isOpen);
+    };
     if (audio.__ailStartDelay) {
       clearTimeout(audio.__ailStartDelay);
       audio.__ailStartDelay = null;
@@ -481,7 +487,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     setPlayVisual(!audio.paused);
     setProgress();
     console.log('[AiMini] show mini player', { title: metaTitle, url: metaUrl || null });
-    wrap.classList.add('show');
+    setOpenState(true);
     if (wrap.getAttribute('data-state') !== 'loading') {
       wrap.setAttribute('data-state','ready');
     }
@@ -503,7 +509,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
         clearTimeout(audio.__ailStartDelay);
         audio.__ailStartDelay = null;
       }
-      wrap.classList.remove('show');
+      setOpenState(false);
       wrap.setAttribute('data-state','idle');
       document.getElementById('ai-overlay')?.classList.remove('show');
       stopFabObserver();       // stop watching
@@ -518,7 +524,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
     // Esc key
     document.addEventListener('keydown', (e)=>{
-      if(e.key === 'Escape' && wrap.classList.contains('show')) closePlayer();
+      if(e.key === 'Escape' && wrap.classList.contains(OPEN_CLASS)) closePlayer();
     });
   }
 
@@ -596,7 +602,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     el.addEventListener('click', (ev) => {
       // If mini is visible, let the close/X handle it later
       const mini = document.getElementById('ai-mini');
-      if (mini && mini.classList.contains('show')) return;
+      if (mini && mini.classList.contains(OPEN_CLASS)) return;
 
       // Call our mini explicitly (safe to call even if your widget also calls it)
       AiMini.open({
