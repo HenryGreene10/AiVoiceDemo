@@ -292,6 +292,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
       document.documentElement.classList.toggle('ai-mini-open', isOpen);
       document.body.classList.toggle('ai-mini-open', isOpen);
     };
+    window.__AIL_applyWidgetTheme?.(wrap);
     if (audio.__ailStartDelay) {
       clearTimeout(audio.__ailStartDelay);
       audio.__ailStartDelay = null;
@@ -526,6 +527,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
       const tag = document.querySelector('script[src*="tts-widget"]');
       const allow = (tag?.dataset?.autotheme ?? 'true') !== 'false';
       if (allow) window.__AiListenAutoTheme?.();
+      window.__AIL_applyWidgetTheme?.();
 
       let audio = document.getElementById('ai-listen-audio');
       if (!audio){

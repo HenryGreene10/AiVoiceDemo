@@ -11,3 +11,5 @@ gunicorn>=21.2
 uvicorn[standard]>=0.30
 python-dotenv>=1.0
 fastapi>=0.111
+SQLAlchemy>=2.0
+mutagen>=1.47

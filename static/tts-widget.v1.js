@@ -12,6 +12,8 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   let ailListenButton = null;
   let ailArticleDetectionDone = false;
   let ailArticleMutationObserver = null;
+  let ailPlacementRetried = false;
+  let ailFallbackPlaced = false;
 
   function logAIL(...args) {
     console.log("[AIL]", ...args);
@@ -145,6 +147,86 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
     });
   }
 
+  function parseColor(str) {
+    try {
+      const c = document.createElement("canvas").getContext("2d");
+      c.fillStyle = str || "#000";
+      const rgb = c.fillStyle.replace(/[^\d,]/g, "").split(",").map((n) => +n.trim());
+      return { r: rgb[0] || 0, g: rgb[1] || 0, b: rgb[2] || 0 };
+    } catch {
+      return { r: 0, g: 0, b: 0 };
+    }
+  }
+
+  function luminance(color) {
+    const c = parseColor(color);
+    const L = (v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * L(c.r) + 0.7152 * L(c.g) + 0.0722 * L(c.b);
+  }
+
+  function isDarkColor(color) {
+    try {
+      return luminance(color) < 0.5;
+    } catch {
+      return false;
+    }
+  }
+
+  function pickAccentColor() {
+    const pill =
+      document.querySelector(".listen-btn, #ai-listen-btn, .ail-listen") ||
+      document.querySelector("#ai-fab, .ai-fab, [data-ai-fab]");
+    if (pill) {
+      const style = getComputedStyle(pill);
+      return style.backgroundColor || style.color || "";
+    }
+    const anchor = document.querySelector("a");
+    if (anchor) return getComputedStyle(anchor).color;
+    return "";
+  }
+
+  function applyWidgetTheme(rootEl) {
+    const target = rootEl || document.querySelector(".ai-mini-root") || document.body;
+    const card = target?.querySelector?.(".ai-card");
+    const cardStyle = card ? getComputedStyle(card) : getComputedStyle(target);
+    const bodyStyle = getComputedStyle(document.body);
+    const surface =
+      (cardStyle && cardStyle.backgroundColor && cardStyle.backgroundColor !== "transparent"
+        ? cardStyle.backgroundColor
+        : null) ||
+      (bodyStyle && bodyStyle.backgroundColor) ||
+      "#ffffff";
+
+    const darkSurface = isDarkColor(surface);
+    const controlBg = darkSurface ? "#ffffff" : surface;
+    const border = darkSurface ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.12)";
+    let accent = pickAccentColor();
+    if (!accent || accent === "transparent") {
+      accent = darkSurface ? "#8fd3ff" : "#1f4b99";
+    }
+    const iconColor = darkSurface ? "#000000" : "#1a1c1a";
+
+    const applyTo = (el) => {
+      if (!el || !el.style) return;
+      el.style.setProperty("--ail-surface", surface);
+      el.style.setProperty("--ail-control-bg", controlBg);
+      el.style.setProperty("--ail-control-border", border);
+      el.style.setProperty("--ail-accent", accent);
+      el.style.setProperty("--ail-icon-color", iconColor);
+      el.style.setProperty("--mp-bg", surface);
+      el.style.setProperty("--mp-border", border);
+      el.style.setProperty("--mp-progress-fill", accent);
+      el.style.setProperty("--mp-progress-bg", border);
+    };
+
+    applyTo(document.documentElement);
+    applyTo(target);
+  }
+  window.__AIL_applyWidgetTheme = applyWidgetTheme;
+
   // --- API call ---
   async function articleAudioUrl(payload) {
     // Base URL for the backend, from config or fallback to window location
@@ -235,6 +317,38 @@ console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
   function nodeTextLength(el) {
     return (el?.innerText || el?.textContent || "").replace(/\s+/g, " ").trim().length;
+  }
+
+  function isVisible(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle ? getComputedStyle(el) : null;
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0")) {
+      return false;
+    }
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (rect && (rect.width === 0 || rect.height === 0)) {
+      return false;
+    }
+    return true;
+  }
+
+  function findLongestVisibleParagraph(root) {
+    const scope = root || document;
+    const paragraphs = scope.querySelectorAll("p");
+    let winner = null;
+    let longest = 0;
+    paragraphs.forEach((p) => {
+      if (!p) return;
+      if (p.closest("nav, header, footer, aside")) return;
+      if (!isVisible(p)) return;
+      const text = (p.innerText || p.textContent || "").replace(/\s+/g, " ").trim();
+      const len = text.length;
+      if (len > longest) {
+        longest = len;
+        winner = p;
+      }
+    });
+    return winner;
   }
 
 function findArticleRoot() {
@@ -336,9 +450,14 @@ function findArticleRoot() {
     const paragraphs = root.querySelectorAll("p");
     for (const p of paragraphs) {
       if (!p) continue;
-      if (p.closest("header, nav, [aria-label*='breadcrumb' i], [aria-label*='navigation' i]")) {
+      if (
+        p.closest(
+          "header, nav, footer, aside, [aria-label*='breadcrumb' i], [aria-label*='navigation' i]"
+        )
+      ) {
         continue;
       }
+      if (!isVisible(p)) continue;
       const text = (p.textContent || "").replace(/\s+/g, " ").trim();
       if (text.length >= MIN_CHARS) {
         return p;
@@ -471,6 +590,7 @@ function findArticleRoot() {
           try {
             const srcBase = (scriptEl && scriptEl.src) || location.href;
             await ensureMiniLoaded(srcBase);
+            window.__AIL_applyWidgetTheme?.();
 
             const pageUrl = window.location.href;
             const extracted = extractArticleParts(btn);
@@ -543,13 +663,11 @@ function findArticleRoot() {
         if (typeof MutationObserver === "undefined") return;
 
         ailArticleMutationObserver = new MutationObserver(() => {
-          if (
-            ailArticleDetectionDone &&
-            ailListenButton &&
-            document.body.contains(ailListenButton)
-          ) {
+          if (ailArticleDetectionDone) {
+            detachArticleObserver();
             return;
           }
+          if (ailPlacementRetried) return;
 
           if (!ailArticleMutationObserver) return;
           if (ailArticleMutationObserver.__pending) return;
@@ -557,14 +675,12 @@ function findArticleRoot() {
           requestAnimationFrame(() => {
             if (!ailArticleMutationObserver) return;
             ailArticleMutationObserver.__pending = false;
-            if (
-              ailArticleDetectionDone &&
-              ailListenButton &&
-              document.body.contains(ailListenButton)
-            ) {
+            if (ailArticleDetectionDone) {
+              detachArticleObserver();
               return;
             }
-            initListenButton();
+            ailPlacementRetried = true;
+            initListenButton({ fromObserver: true });
           });
         });
 
@@ -574,7 +690,8 @@ function findArticleRoot() {
         });
       }
 
-      function initListenButton() {
+      function initListenButton(opts = {}) {
+        const fromObserver = !!(opts && opts.fromObserver);
         // 1) If a .ail-listen already exists, just wire it up.
         const manualBtn = document.querySelector(".ail-listen");
         if (manualBtn && !manualBtn.dataset.ailAuto) {
@@ -638,9 +755,22 @@ function findArticleRoot() {
         if (firstLongParagraph && firstLongParagraph.parentElement) {
           firstLongParagraph.parentElement.insertBefore(wrapper, firstLongParagraph);
           ailArticleRoot = root;
+          ailFallbackPlaced = false;
           markArticleDetectionComplete();
           logAIL("Listen button attached near long body paragraph", {
             snippet: shortTextSnippet(firstLongParagraph.textContent),
+          });
+          return;
+        }
+
+        const longestParagraph = findLongestVisibleParagraph(root || document);
+        if (longestParagraph && longestParagraph.parentElement) {
+          longestParagraph.parentElement.insertBefore(wrapper, longestParagraph);
+          ailArticleRoot = root;
+          ailFallbackPlaced = false;
+          markArticleDetectionComplete();
+          logAIL("Listen button attached near longest visible paragraph", {
+            snippet: shortTextSnippet(longestParagraph.textContent),
           });
           return;
         }
@@ -654,6 +784,7 @@ function findArticleRoot() {
         if (placementTarget) {
           placementTarget.insertAdjacentElement("afterend", wrapper);
           ailArticleRoot = root;
+          ailFallbackPlaced = false;
           markArticleDetectionComplete();
           logAIL("Listen button attached near article root:", describeNode(placementTarget));
           return;
@@ -662,6 +793,7 @@ function findArticleRoot() {
         if (root) {
           root.insertBefore(wrapper, root.firstChild);
           ailArticleRoot = root;
+          ailFallbackPlaced = false;
           markArticleDetectionComplete();
           logAIL("Listen button attached at fallback article root:", describeNode(root));
           return;
@@ -669,6 +801,10 @@ function findArticleRoot() {
 
         document.body.insertAdjacentElement("afterbegin", wrapper);
         logAIL("No suitable article root; using generic placement only.");
+        ailFallbackPlaced = true;
+        if (fromObserver) {
+          markArticleDetectionComplete();
+        }
       }
 
       initListenButton();
