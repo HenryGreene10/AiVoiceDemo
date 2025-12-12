@@ -78,13 +78,14 @@ def get_validated_tenant(request: Request) -> str:
         logger.warning("[tenant] Missing x-tenant-key header")
         raise HTTPException(status_code=401, detail="Missing tenant key (x-tenant-key header).")
 
-    allowed_keys = set(get_tenant_settings().tenant_keys)
-    if allowed_keys and tenant_id not in allowed_keys:
-        logger.warning(f"[tenant] Unknown tenant key (env allowlist): {tenant_id}")
-        raise HTTPException(
-            status_code=403,
-            detail=f"Unknown tenant key. Update {TENANT_KEYS_ENV} to include '{tenant_id}'.",
-        )
+    if TENANT_ALLOWLIST_ENFORCE:
+        allowed_keys = set(get_tenant_settings().tenant_keys)
+        if allowed_keys and tenant_id not in allowed_keys:
+            logger.warning(f"[tenant] Unknown tenant key (env allowlist): {tenant_id}")
+            raise HTTPException(
+                status_code=403,
+                detail=f"Unknown tenant key. Update {TENANT_KEYS_ENV} to include '{tenant_id}'.",
+            )
 
     # Persistent tenant store is the source of truth for quotas and existence.
     _load_tenant_record(tenant_id)
@@ -248,6 +249,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
+TENANT_ALLOWLIST_ENFORCE = os.getenv("TENANT_ALLOWLIST_ENFORCE", "0").strip().lower() in ("1","true","yes")
 
 @dataclass
 class TenantConfig:

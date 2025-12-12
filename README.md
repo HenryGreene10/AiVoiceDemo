@@ -44,3 +44,4 @@ Paste this once into your site layout (above `</body>`):
 ></script>
 ```
 
+Tenant validation defaults to the database. To enforce an env allowlist as well, set `TENANT_ALLOWLIST_ENFORCE=1` (with `TENANT_KEYS` providing the allowed keys). Leave it unset/0 to allow any tenant present in the DB.
