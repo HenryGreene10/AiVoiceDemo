@@ -185,9 +185,9 @@ export default function Page() {
                         marginTop: 8,
                       }}
                     >{`<script
-  data-ail-api-base="https://easyaudio.app"
-  data-ail-tenant="{{TENANT_KEY}}"
-  src="https://easyaudio.app/static/tts-widget.v1.js">
+      data-ail-api-base="https://hgtts.onrender.com"
+      data-ail-tenant="demo-blog-01"
+      src="https://hgtts.onrender.com/static/tts-widget.v1.js">
 </script>`}</pre>
                   </details>
                 </li>
