@@ -495,9 +495,6 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     // Hide pill on open, show on close
     hideFab(true);           // make the Listen pill go away immediately
     startFabObserver();      // keep it hidden if the widget flips it to "Pause"
-    document.getElementById('ai-overlay')?.classList.add('show');
-
-    // Wire up close functionality
     const overlay = document.getElementById('ai-overlay');
     const closeBtn = q('#mp-close');
     renderIcon(closeBtn, ICONS.close);
@@ -511,7 +508,6 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
       }
       setOpenState(false);
       wrap.setAttribute('data-state','idle');
-      document.getElementById('ai-overlay')?.classList.remove('show');
       stopFabObserver();       // stop watching
       showFab();               // bring the Listen pill back
     }
