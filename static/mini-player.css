@@ -520,13 +520,13 @@ body.ai-mini-open,
 .ai-mini-root {
   position: fixed;
   bottom: calc(24px + env(safe-area-inset-bottom));
-  right: 32px;
+  right: 24px;
   left: auto;
   width: auto;
-  max-width: none;
+  max-width: min(360px, calc(100vw - 48px));
   padding: 0;
   margin: 0;
-  background: rgba(255,255,255,0.001) !important;
+  background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   box-sizing: border-box;
@@ -552,11 +552,15 @@ body.ai-mini-open,
     width: 100%;
     max-width: 100%;
     padding: 0 16px;
-    background: rgba(255,255,255,0.001) !important;
+    background: transparent !important;
   }
   .ai-mini-root .ai-card{
     width: 100%;
     max-width: 100%;
-    margin: 0;
+    margin: 0 auto;
   }
+}
+
+.ai-mini-root .ai-meter{
+  margin-top: 18px !important;
 }
