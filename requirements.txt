@@ -13,3 +13,4 @@ python-dotenv>=1.0
 fastapi>=0.111
 SQLAlchemy>=2.0
 mutagen>=1.47
+stripe>=10.0

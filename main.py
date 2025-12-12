@@ -24,6 +24,7 @@ import csv
 from threading import Lock
 from datetime import datetime, timezone, date
 from mutagen.mp3 import MP3
+import stripe
 from app.config.tenants import TENANTS, TENANT_USAGE
 from app.config.settings import TENANT_KEYS_ENV, get_tenant_settings
 from app.tenant_store import (
@@ -250,6 +251,10 @@ ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
 TENANT_ALLOWLIST_ENFORCE = os.getenv("TENANT_ALLOWLIST_ENFORCE", "0").strip().lower() in ("1","true","yes")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
 
 @dataclass
 class TenantConfig:
@@ -1499,6 +1504,21 @@ def precache_status(text: str, voice: Optional[str] = None):
 def cache_stats():
     s = get_cache_stats()
     return {**s, "hits": metrics["tts_cache_hits"], "misses": metrics["tts_cache_misses"]}
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        logger.warning("stripe webhook verify failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    logger.info("[stripe] event received type=%s", event.get("type"))
+    return JSONResponse({"ok": True})
 
 @app.post("/cache/evict")
 def cache_evict():
