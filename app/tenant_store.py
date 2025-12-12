@@ -14,6 +14,13 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Normalize datetimes to aware UTC so comparisons never mix naive/aware."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 # Store under /cache so Render's persistent disk keeps tenant keys/usage across deploys.
 DEFAULT_SQLITE_PATH = Path("/cache/tenants.db")
 DB_PATH = Path(os.getenv("TENANT_DB_PATH", DEFAULT_SQLITE_PATH))
@@ -85,8 +92,9 @@ def get_tenant(session: Session, tenant_key: str) -> Optional[Tenant]:
 
 
 def refresh_renewal(session: Session, tenant: Tenant, now: Optional[datetime] = None) -> None:
-    now = now or _utcnow()
-    if tenant.renewal_at is None or now >= tenant.renewal_at:
+    now = as_utc(now or _utcnow())
+    renewal = as_utc(tenant.renewal_at)
+    if renewal is None or now >= renewal:
         tenant.used_seconds_month = 0
         tenant.renewal_at = now + timedelta(days=30)
 
