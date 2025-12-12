@@ -14,7 +14,8 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-DEFAULT_SQLITE_PATH = Path("backend/data/tenants.sqlite")
+# Store under /cache so Render's persistent disk keeps tenant keys/usage across deploys.
+DEFAULT_SQLITE_PATH = Path("/cache/tenants.db")
 DB_PATH = Path(os.getenv("TENANT_DB_PATH", DEFAULT_SQLITE_PATH))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
