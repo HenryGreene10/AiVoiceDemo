@@ -22,7 +22,7 @@ export default function RootLayout({
           src="https://hgtts.onrender.com/static/tts-widget.v1.js"
           strategy="afterInteractive"
           data-ail-api-base="https://hgtts.onrender.com"
-          data-ail-tenant="ae32c78e-5b98-4fcf-aac6-d854c4abcf4c"
+          data-ail-tenant="27929280-aff3-4827-bb5f-4bf5cae35128"
         />
       </body>
     </html>
