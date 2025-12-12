@@ -2,6 +2,7 @@
 import logging
 import math
 import os, hashlib, requests, time, httpx
+import secrets
 from pathlib import Path
 from collections import OrderedDict
 from dotenv import load_dotenv; 
@@ -253,6 +254,13 @@ OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest wi
 TENANT_ALLOWLIST_ENFORCE = os.getenv("TENANT_ALLOWLIST_ENFORCE", "0").strip().lower() in ("1","true","yes")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+EMAIL_FROM = os.getenv("EMAIL_FROM", "").strip()
+PUBLIC_API_BASE = os.getenv("PUBLIC_API_BASE", "").strip()
+PUBLIC_WIDGET_URL = os.getenv("PUBLIC_WIDGET_URL", "").strip()
+PRICE_CREATOR_ID = os.getenv("PRICE_CREATOR_ID", "").strip()
+PRICE_PUBLISHER_ID = os.getenv("PRICE_PUBLISHER_ID", "").strip()
+PRICE_NEWSROOM_ID = os.getenv("PRICE_NEWSROOM_ID", "").strip()
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
@@ -1505,6 +1513,86 @@ def cache_stats():
     s = get_cache_stats()
     return {**s, "hits": metrics["tts_cache_hits"], "misses": metrics["tts_cache_misses"]}
 
+# --- Stripe provisioning helpers ---
+TENANT_STORE = Path("/cache/tenants.json")
+
+def _tier_from_price(price_id: str) -> str | None:
+    if not price_id:
+        return None
+    if price_id == PRICE_CREATOR_ID:
+        return "creator"
+    if price_id == PRICE_PUBLISHER_ID:
+        return "publisher"
+    if price_id == PRICE_NEWSROOM_ID:
+        return "newsroom"
+    return None
+
+def _load_tenant_store() -> dict:
+    if not TENANT_STORE.exists():
+        return {}
+    try:
+        return json.loads(TENANT_STORE.read_text("utf-8"))
+    except Exception:
+        return {}
+
+def _save_tenant_store(data: dict) -> None:
+    TENANT_STORE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = TENANT_STORE.with_suffix(".part")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(TENANT_STORE)
+
+async def _send_resend_email(to_email: str, tenant_key: str, tier: str) -> bool:
+    if not RESEND_API_KEY or not EMAIL_FROM or not to_email:
+        return False
+    snippet = f"""<script
+  src="{PUBLIC_WIDGET_URL}"
+  data-ail-api-base="{PUBLIC_API_BASE}"
+  data-ail-tenant="{tenant_key}">
+</script>"""
+    html = (
+        f"<p>Your EasyAudio plan: <strong>{tier.title()}</strong></p>"
+        f"<p>Your tenant key: <code>{tenant_key}</code></p>"
+        f"<p>Install snippet:</p><pre>{snippet}</pre>"
+        f"<p>Paste this right before </body> on any page you want audio.</p>"
+    )
+    client: httpx.AsyncClient = app.state.http_client
+    try:
+        resp = await client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": EMAIL_FROM,
+                "to": [to_email],
+                "subject": "Your EasyAudio install snippet",
+                "html": html,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning("resend email failed: %s", e)
+        return False
+
+def _ensure_tenant_for_email(email: str, tier: str, stripe_customer_id: str | None = None) -> tuple[str, bool]:
+    """Return (tenant_key, is_new)."""
+    email_key = (email or "").strip().lower()
+    store = _load_tenant_store()
+    if email_key in store and store[email_key].get("tenant_key"):
+        return store[email_key]["tenant_key"], False
+    tenant_key = f"tnt_{secrets.token_urlsafe(12)}"
+    store[email_key] = {
+        "tenant_key": tenant_key,
+        "tier": tier,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "stripe_customer_id": stripe_customer_id,
+    }
+    try:
+        _save_tenant_store(store)
+    except Exception as e:
+        logger.warning("tenant store write failed: %s", e)
+    return tenant_key, True
+
 
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request):
@@ -1536,6 +1624,9 @@ async def stripe_webhook(request: Request):
             (full_session.get("customer_details") or {}).get("email")
             or full_session.get("customer_email")
         )
+        if not cust_email:
+            logger.warning("stripe checkout.completed missing email for session=%s", session_id)
+            return JSONResponse({"ok": True})
         line_items = (full_session.get("line_items") or {}).get("data") or []
         first = line_items[0] if line_items else {}
         price = (first.get("price") or {}) if isinstance(first, dict) else {}
@@ -1547,7 +1638,23 @@ async def stripe_webhook(request: Request):
             price_id,
             interval,
         )
-
+        tier = _tier_from_price(price_id)
+        if not tier:
+            logger.error("stripe webhook unknown price_id=%s", price_id)
+            return JSONResponse({"ok": True})
+        tenant_key, _created = _ensure_tenant_for_email(
+            cust_email,
+            tier,
+            stripe_customer_id=full_session.get("customer"),
+        )
+        emailed = await _send_resend_email(cust_email, tenant_key, tier)
+        logger.info(
+            "[provision] email=%s tier=%s tenant_key=%s emailed=%s",
+            cust_email,
+            tier,
+            tenant_key,
+            emailed,
+        )
     return JSONResponse({"ok": True})
 
 @app.post("/cache/evict")
