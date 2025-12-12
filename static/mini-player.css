@@ -519,48 +519,49 @@ body.ai-mini-open,
 /* === FINAL MINI-PLAYER LAYOUT OVERRIDES === */
 .ai-mini-root {
   position: fixed;
+  z-index: 9999;
   bottom: calc(24px + env(safe-area-inset-bottom));
   right: 24px;
   left: auto;
   width: auto;
-  max-width: min(360px, calc(100vw - 48px));
-  padding: 0;
+  max-width: 360px;
   margin: 0;
+  padding: 0;
+  box-sizing: border-box;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  box-sizing: border-box;
 }
 .ai-mini-root::before,
 .ai-mini-root::after {
   display: none !important;
   content: none !important;
 }
-.ai-mini-root .ai-card{
+.ai-mini-root .ai-card {
   width: 100%;
-  max-width: 360px;
+  max-width: 100%;
   margin: 0;
   border-radius: 18px;
+  box-sizing: border-box;
   padding: 12px 16px 14px;
 }
 
-@media (max-width: 768px){
-  .ai-mini-root{
+@media (max-width: 768px) {
+  .ai-mini-root {
     left: 0;
     right: 0;
     bottom: calc(16px + env(safe-area-inset-bottom));
     width: 100%;
     max-width: 100%;
     padding: 0 16px;
-    background: transparent !important;
   }
-  .ai-mini-root .ai-card{
+  .ai-mini-root .ai-card {
     width: 100%;
     max-width: 100%;
-    margin: 0 auto;
+    margin: 0;
   }
 }
 
-.ai-mini-root .ai-meter{
+.ai-mini-root .ai-meter {
   margin-top: 18px !important;
 }
