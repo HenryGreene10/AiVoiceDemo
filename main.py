@@ -1517,7 +1517,37 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         logger.warning("stripe webhook verify failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
-    logger.info("[stripe] event received type=%s", event.get("type"))
+    event_type = event.get("type")
+    logger.info("[stripe] event received type=%s", event_type)
+
+    if event_type == "checkout.session.completed":
+        session_obj = event.get("data", {}).get("object", {})
+        session_id = session_obj.get("id")
+        try:
+            full_session = stripe.checkout.Session.retrieve(
+                session_id,
+                expand=["line_items.data.price"],
+            )
+        except Exception as e:
+            logger.warning("stripe session retrieve failed: %s", e)
+            return JSONResponse({"ok": True})
+
+        cust_email = (
+            (full_session.get("customer_details") or {}).get("email")
+            or full_session.get("customer_email")
+        )
+        line_items = (full_session.get("line_items") or {}).get("data") or []
+        first = line_items[0] if line_items else {}
+        price = (first.get("price") or {}) if isinstance(first, dict) else {}
+        price_id = price.get("id")
+        interval = (price.get("recurring") or {}).get("interval")
+        logger.info(
+            "[stripe] checkout.session.completed email=%s price_id=%s interval=%s",
+            cust_email,
+            price_id,
+            interval,
+        )
+
     return JSONResponse({"ok": True})
 
 @app.post("/cache/evict")
