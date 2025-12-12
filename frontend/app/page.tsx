@@ -23,7 +23,7 @@ export default function Page() {
           {/* HERO */}
         <section className="ea-hero">
           <div className="ea-card ea-hero-card">
-            <h1 className="ea-hero-title">Turn Any Article Into a High-Quality Listening Experience</h1>
+            <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listening Experience</h1>
           </div>
         </section>
 
@@ -31,7 +31,7 @@ export default function Page() {
         <section id="demo" className="ea-section ea-demo-section">
           <article className="ea-demo-article" data-ail-article>
             <h1 className="ea-demo-title" data-ail-title>
-              Why EasyAudio Makes Your Articles More Impactful
+              How EasyAudio Makes Your Work More Impactful
             </h1>
             <p className="ea-demo-author" data-ail-author>
               By Henry Greene
@@ -43,21 +43,21 @@ export default function Page() {
                 className="ea-listen-button ea-demo-listen-btn listen-btn ail-listen"
                 data-ail-listen="true"
               >
-                LISTEN
+                Listen
               </button>
             </div>
 
             <div className="ea-demo-body" data-ail-body>
               <p>
-                Readers love audio versions of articles. They spend more time on your site, stay engaged longer, and share your content more often when they can listen while they read.  
+                Some readers love audio versions of articles. They can listen on the go, or follow along as they read. Your viewers will spend more time on your site, stay engaged longer, and share your content more often.  
               </p>
               <p>
-                EasyAudio makes it effortless to add clean and natural voiceovers. When you add a single script to your page, every article on your site becomes instantly playable. 
-                A “Listen” button appears under the title, generates the narration, and plays it through the built-in mini-player. If you update the article, the audio updates automatically.
+                EasyAudio makes it effortless to add clean and natural voiceovers to your page. We add a single script to your page, and every article on your site becomes instantly playable. 
+                A “Listen” button appears under the title, as shown in the demo, and plays narration through the built-in mini-player. If you update your text, the audio will update automatically!
               </p>
               <p>
                 There are no extra steps in your publishing workflow. No exporting. No uploading. 
-                Everything runs quietly in the background and keeps all of your articles listenable at scale.
+                Everything runs quietly in the background and keeps any of your articles listenable at unlimited scale.
               </p>
             </div>
           </article>
@@ -90,7 +90,7 @@ export default function Page() {
                 </a>
                 <ul className="ea-plan-features">
                   <li>For authors, bloggers, and small sites</li>
-                  <li>Up to 2 hours of unique audio renders per month</li>
+                  <li>Up to 2 hours of <i>unique</i> audio renders per month</li>
                   <li>Unlimited playback</li>
                   <li>Complimentary installation and 24/7 email support</li>
                 </ul>
@@ -112,8 +112,8 @@ export default function Page() {
                 </a>
                 <ul className="ea-plan-features">
                   <li>For larger content teams</li>
-                  <li>Up to 10 hours of unique audio renders per month</li>
-                  <li>Unlimited playback</li>
+                  <li>Up to 10 hours of <i>unique</i> audio renders per month</li>
+                  <li>Unlimited playback and customizable voices</li>
                   <li>Complimentary installation and 24/7 email support</li>
                 </ul>
               </div>
@@ -134,8 +134,8 @@ export default function Page() {
                 </a>
                 <ul className="ea-plan-features">
                   <li>For professional publishers</li>
-                  <li>Up to 50 hours of unique audio renders per month</li>
-                  <li>Unlimited playback</li>
+                  <li>Up to 50 hours of <i>unique</i> audio renders per month</li>
+                  <li>Unlimited playback and customizable voices</li>
                   <li>Complimentary installation and priority support</li>
                 </ul>
               </div>
