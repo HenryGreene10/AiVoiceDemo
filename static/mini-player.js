@@ -520,12 +520,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     closeBtn.addEventListener('click', closePlayer);
 
     // click outside
-    overlay?.addEventListener('click', closePlayer);
-
-    // Esc key
-    document.addEventListener('keydown', (e)=>{
-      if(e.key === 'Escape' && wrap.classList.contains(OPEN_CLASS)) closePlayer();
-    });
+    // overlay click + Esc no longer close automatically; only X closes
   }
 
   // Public API
