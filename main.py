@@ -772,14 +772,15 @@ def create_tenant_admin(
     with tenant_session() as session:
         tenant = create_tenant(session, plan)
         quota_seconds = quota_for_plan(plan)
+        response = {
+            "tenant_key": tenant.tenant_key,
+            "plan_tier": tenant.plan_tier,
+            "quota_seconds_month": quota_seconds,
+            "renewal_at": tenant.renewal_at,
+            "created_at": tenant.created_at,
+        }
 
-    return {
-        "tenant_key": tenant.tenant_key,
-        "plan_tier": tenant.plan_tier,
-        "quota_seconds_month": quota_seconds,
-        "renewal_at": tenant.renewal_at,
-        "created_at": tenant.created_at,
-    }
+    return response
 
 # --- simple API key guard (prod only)
 ALLOWED_KEYS = set([k.strip() for k in os.getenv("ALLOWED_KEYS", "").split(",") if k.strip()])
