@@ -49,15 +49,16 @@ export default function Page() {
 
             <div className="ea-demo-body" data-ail-body>
               <p>
-                Some readers love audio versions of articles. They can listen on the go, or follow along as they read. Your viewers will spend more time on your site, stay engaged longer, and share your content more often.  
+                Some readers love audio versions of articles. They can listen on the go, or follow along as they read. According to a study done at Carnegie Mellon University, fMRI's show that reading and listening activate 
+                overlapping language processing areas in the brain, causing a stronger memory trace. With audio available, your viewers will spend more time on your site, stay engaged longer, and share your content more frequently.  
               </p>
               <p>
-                EasyAudio makes it effortless to add clean and natural voiceovers to your page. We add a single script to your page, and every article on your site becomes instantly playable. 
+                EasyAudio makes it effortless to add clean and natural voiceovers to your page. We add a single script to your page, and every article on your site instantly becomes playable. 
                 A “Listen” button appears under the title, as shown in the demo, and plays narration through the built-in mini-player. If you update your text, the audio will update automatically!
               </p>
               <p>
                 There are no extra steps in your publishing workflow. No exporting. No uploading. 
-                Everything runs quietly in the background and keeps any of your articles listenable at unlimited scale.
+                Everything runs quietly in the background and makes your articles listenable at unlimited scale.
               </p>
             </div>
           </article>
