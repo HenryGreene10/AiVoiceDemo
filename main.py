@@ -23,7 +23,7 @@ import re
 from fastapi.staticfiles import StaticFiles
 import csv
 from threading import Lock
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from mutagen.mp3 import MP3
 import stripe
 from app.config.tenants import TENANTS, TENANT_USAGE
@@ -40,6 +40,7 @@ from app.tenant_store import (
     tenant_session,
     TIER_QUOTAS_SECONDS,
 )
+from fastapi.exception_handlers import http_exception_handler as fastapi_http_exception_handler
 
 logger = logging.getLogger("easyaudio")
 
@@ -52,41 +53,70 @@ logger.info(f"[cache] CACHE_ROOT={CACHE_ROOT}")
 # - get_validated_tenant() (below) enforces that list using the x-tenant-key header the widget sets from its data-ail-tenant attribute.
 # - All TTS/cache endpoints call that helper once so every request is traced to a validated tenant.
 
+def _tenant_from_body(body: object) -> str | None:
+    if body is None:
+        return None
+    data = None
+    try:
+        if isinstance(body, BaseModel):
+            # Prefer model_dump for pydantic v2 but fall back cleanly.
+            data = body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else body.dict()
+        elif isinstance(body, dict):
+            data = body
+        elif hasattr(body, "dict"):
+            data = body.dict()
+    except Exception:
+        data = None
+    if not isinstance(data, dict):
+        return None
+    for key in ("tenant", "tenant_key", "tenantKey"):
+        val = data.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
 
-def _extract_tenant_key(request: Request) -> str | None:
+
+def _extract_tenant_key(request: Request, body: object | None = None) -> str | None:
     header = request.headers.get("x-tenant-key")
     if header and header.strip():
         return header.strip()
+    body_val = _tenant_from_body(body)
+    if body_val:
+        return body_val
     tenant_param = request.query_params.get("tenant")
     if tenant_param and tenant_param.strip():
         return tenant_param.strip()
     return None
 
 
+def _tenant_error(message: str, code: str = "invalid_tenant") -> None:
+    raise HTTPException(status_code=401, detail={"error": code, "message": message})
+
+
 def _load_tenant_record(tenant_id: str) -> Tenant:
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_id)
         if not tenant:
-            raise HTTPException(status_code=401, detail="Unknown tenant key.")
+            _tenant_error("Unknown tenant key.", code="invalid_tenant")
         refresh_renewal(session, tenant)
         return tenant
 
 
-def get_validated_tenant(request: Request) -> str:
+def get_validated_tenant(request: Request, body: object | None = None) -> str:
     """Resolve tenant from request metadata and enforce the env-configured allowlist."""
-    tenant_id = _extract_tenant_key(request)
+    tenant_id = _extract_tenant_key(request, body=body)
     # To onboard a new client, add their key to TENANT_KEYS in the environment and redeploy.
     if not tenant_id:
-        logger.warning("[tenant] Missing x-tenant-key header")
-        raise HTTPException(status_code=401, detail="Missing tenant key (x-tenant-key header).")
+        logger.warning("[tenant] Missing tenant key")
+        _tenant_error("Missing tenant key (x-tenant-key header, body.tenant, or tenant query param).", code="missing_tenant_key")
 
     if TENANT_ALLOWLIST_ENFORCE:
         allowed_keys = set(get_tenant_settings().tenant_keys)
         if allowed_keys and tenant_id not in allowed_keys:
             logger.warning(f"[tenant] Unknown tenant key (env allowlist): {tenant_id}")
-            raise HTTPException(
-                status_code=403,
-                detail=f"Unknown tenant key. Update {TENANT_KEYS_ENV} to include '{tenant_id}'.",
+            _tenant_error(
+                f"Unknown tenant key. Update {TENANT_KEYS_ENV} to include '{tenant_id}'.",
+                code="invalid_tenant_key",
             )
 
     # Persistent tenant store is the source of truth for quotas and existence.
@@ -139,7 +169,18 @@ def enforce_article_length_limit(tenant_id: str, text: str) -> tuple[str, bool]:
     return truncated, True
 
 
-def ensure_tenant_quota_ok(tenant_id: str) -> dict[str, object]:
+def _quota_error_payload(plan: str, quota: int, used: int) -> dict[str, object]:
+    plan_name = (plan or "trial")
+    return {
+        "error": "quota_exceeded",
+        "message": f"Monthly quota reached for the {plan_name} plan.",
+        "plan": plan_name,
+        "limit_seconds": int(quota),
+        "used_seconds": int(used),
+    }
+
+
+def ensure_tenant_quota_ok(tenant_id: str, request: Request | None = None) -> dict[str, object]:
     """
     Refresh renewal window and enforce monthly quota for a tenant.
     Returns a small dict with quota state for logging.
@@ -147,11 +188,16 @@ def ensure_tenant_quota_ok(tenant_id: str) -> dict[str, object]:
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_id)
         if not tenant:
-            raise HTTPException(status_code=401, detail="Unknown tenant key.")
+            _tenant_error("Unknown tenant key.", code="invalid_tenant")
         refresh_renewal(session, tenant)
         quota = quota_for_plan(tenant.plan_tier)
         if tenant.used_seconds_month >= quota:
-            raise HTTPException(status_code=402, detail="quota exceeded")
+            payload = _quota_error_payload(tenant.plan_tier, quota, tenant.used_seconds_month)
+            try:
+                _maybe_send_quota_email(tenant, quota, request=request)
+            except Exception as e:
+                logger.warning("[quota] notify error: %s", e)
+            raise HTTPException(status_code=402, detail=payload)
         return {
             "plan": tenant.plan_tier,
             "quota": quota,
@@ -180,6 +226,13 @@ def mp3_duration_seconds(path: Path) -> int:
         logger.warning("[tenant] unable to read mp3 duration for %s: %s", path, e)
         return 0
 
+
+def estimate_seconds_from_text(text: str) -> int:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return 0
+    return max(5, int(round(len(cleaned) / 15.0)))
+
 # --- rate limiting ---
 import time, collections
 
@@ -205,11 +258,11 @@ def _client_ip(request: Request) -> str:
     xf = request.headers.get("x-forwarded-for")
     return (xf.split(",")[0].strip() if xf else request.client.host) or "unknown"
 
-def rate_limit_check(request: Request):
+def rate_limit_check(request: Request, body: object | None = None):
     ip = _client_ip(request)
     ok_ip = _allow(_ip_hits, ip, *RATE_LIMITS["per_ip"])
     # tenant key (or 'public' if open mode)
-    tenant = _extract_tenant_key(request) or "public"
+    tenant = _extract_tenant_key(request, body=body) or "public"
     ok_tenant = _allow(_tenant_hits, tenant, *RATE_LIMITS["per_tenant"])
     if not (ok_ip and ok_tenant):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry later.")
@@ -280,6 +333,12 @@ VOICE_TENANTS: dict[str, TenantConfig] = {
 
 # --- app
 app = FastAPI()
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code in (401, 402) and isinstance(exc.detail, dict) and exc.detail.get("error"):
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return await fastapi_http_exception_handler(request, exc)
 
 # --- Include wrap router
 from server.wrap import router as wrap_router
@@ -360,7 +419,9 @@ def chunk_by_sentence(s: str, target: int = 1200, hard_max: int = 1600) -> list[
     return parts
 
 @app.get("/read_chunked")
-async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+async def read_chunked(request: Request, url: str, voice: str | None = None, model: str | None = None):
+    tenant_id = get_validated_tenant(request)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     # 1) Extract & prepare
     title, author, text = extract_article(url)
     cleaned = preprocess_for_tts(text or "")
@@ -375,11 +436,14 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
 
     v = voice or VOICE_ID
     m = model or MODEL_ID
+    usage_seconds = estimate_seconds_from_text(narration)
 
     # 2) PREFETCH FIRST CHUNK to avoid 200/0B
     try:
         first_text = enhance_prosody(preprocess_for_tts(parts[0]))
         first_bytes = await tts_bytes(first_text, v, m)
+        if usage_seconds:
+            record_tenant_usage_seconds(tenant_id, usage_seconds)
         print({"event": "chunk_ok", "i": 0, "bytes": len(first_bytes)})
     except Exception as e:
         # Fail BEFORE starting the stream
@@ -591,25 +655,33 @@ def chunk_by_sentence(s: str, target: int = 1200, hard_max: int = 1600) -> list[
     return parts
 
 @app.get("/read_chunked")
-async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+async def read_chunked(request: Request, url: str, voice: str | None = None, model: str | None = None):
+    tenant_id = get_validated_tenant(request)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     title, author, text = extract_article(url)
     narration = prepare_article(title, author, preprocess_for_tts(text))
     parts = chunk_by_sentence(narration, target=1200, hard_max=1600)
+    usage_seconds = estimate_seconds_from_text(narration)
+    usage_recorded = False
 
     async def multi():
+        nonlocal usage_recorded
         for i, part in enumerate(parts):
             try:
                 async for b in stream_bytes_for_text_safe(
                     part, voice or VOICE_ID, model or MODEL_ID
                 ):
                     if b:
+                        if usage_seconds and not usage_recorded:
+                            record_tenant_usage_seconds(tenant_id, usage_seconds)
+                            usage_recorded = True
                         yield b
             except Exception as e:
                 # Log, then stop or continue; do NOT raise after streaming started
                 print({"event": "chunk_fail", "i": i, "err": str(e)[:200]})
                 break  # or `continue` to try next part
 
-    return StreamingResponse(multi(), media_type="audio/mpeg")
+    return StreamingResponse(multi(), media_type="audio/mpeg", headers={"X-AIL-Tenant": tenant_id})
 
 
 
@@ -895,7 +967,7 @@ def tts_post(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    tenant_id = get_validated_tenant(request)
+    tenant_id = get_validated_tenant(request, body=body)
     v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
@@ -925,8 +997,8 @@ async def api_tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(0),
 ):
-    tenant_id = get_validated_tenant(request)
-    rate_limit_check(request)
+    tenant_id = get_validated_tenant(request, body=body)
+    rate_limit_check(request, body=body)
 
     v = (voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
     if not v:
@@ -961,7 +1033,7 @@ async def api_tts(
             }
 
         # Quota check is done right before a new render to avoid burning credits on rejects.
-        quota_state = ensure_tenant_quota_ok(tenant_id)
+        quota_state = ensure_tenant_quota_ok(tenant_id, request=request)
         try:
             data = await tts_bytes(text_for_tts, v, (model or MODEL_ID))
         except Exception as e:
@@ -972,6 +1044,8 @@ async def api_tts(
         tmp.replace(outp)
 
     duration = mp3_duration_seconds(outp)
+    if not duration:
+        duration = estimate_seconds_from_text(text_for_tts)
     if duration:
         record_tenant_usage_seconds(tenant_id, duration)
 
@@ -1008,8 +1082,10 @@ def debug_config():
 
 
 @app.get("/read")
-async def read(url: str, voice: str | None = None, model: str | None = None):
+async def read(request: Request, url: str, voice: str | None = None, model: str | None = None):
     # sanity: key/voice present
+    tenant_id = get_validated_tenant(request)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     if not API_KEY:
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY is missing")
     v = (voice or VOICE_ID or "").strip()
@@ -1045,6 +1121,9 @@ async def read(url: str, voice: str | None = None, model: str | None = None):
     merged = b"".join(bufs)
     if not merged:
         raise HTTPException(status_code=502, detail="Upstream produced no audio for any chunk")
+    est = estimate_seconds_from_text(narration)
+    if est:
+        record_tenant_usage_seconds(tenant_id, est)
 
     return Response(content=merged, media_type="audio/mpeg")
 
@@ -1314,6 +1393,8 @@ def stream_with_cache(text: str, voice: str, model: str,
             )
             if tenant_id:
                 duration = mp3_duration_seconds(Path(path))
+                if not duration:
+                    duration = estimate_seconds_from_text(tts_input)
                 if duration:
                     record_tenant_usage_seconds(tenant_id, duration)
         except Exception:
@@ -1445,6 +1526,8 @@ async def ensure_article_cached(
         tmp.replace(mp3_path)
         size = mp3_path.stat().st_size
         duration = mp3_duration_seconds(mp3_path)
+        if not duration:
+            duration = estimate_seconds_from_text(tts_ready)
         if duration:
             record_tenant_usage_seconds(tenant_id, duration)
         logger.info(
@@ -1473,7 +1556,7 @@ _precache_lock = Lock()
 
 @app.post("/precache_text")
 async def precache_text(req: PrecacheReq, request: Request):
-    tenant_id = get_validated_tenant(request)
+    tenant_id = get_validated_tenant(request, body=req)
     voice = req.voice or os.getenv("VOICE_ID", "")
     if not req.text.strip():
         raise HTTPException(400, "text required")
@@ -1484,14 +1567,18 @@ async def precache_text(req: PrecacheReq, request: Request):
     duration = mp3_duration_seconds(outp) if outp.exists() else None
     with _precache_lock:
         if not outp.exists():
-            ensure_tenant_quota_ok(tenant_id)
+            ensure_tenant_quota_ok(tenant_id, request=request)
             await elevenlabs_tts_to_file(prepared, voice, outp)
             created = True
             duration = mp3_duration_seconds(outp)
+            if not duration:
+                duration = estimate_seconds_from_text(prepared)
             if duration:
                 record_tenant_usage_seconds(tenant_id, duration)
     if duration is None and outp.exists():
         duration = mp3_duration_seconds(outp)
+    if not duration:
+        duration = estimate_seconds_from_text(prepared)
     return {
         "ok": True,
         "created": created,
@@ -1515,6 +1602,32 @@ def cache_stats():
 
 # --- Stripe provisioning helpers ---
 TENANT_STORE = Path("/cache/tenants.json")
+NOTIFY_STORE = Path("/cache/notify.json")
+
+
+def _public_base_from_request(request: Request | None = None) -> str:
+    if PUBLIC_API_BASE:
+        return PUBLIC_API_BASE.rstrip("/")
+    if request is not None:
+        try:
+            url = request.url
+            base = f"{url.scheme}://{url.netloc}"
+            if base:
+                return base.rstrip("/")
+        except Exception:
+            pass
+    env_app_url = os.getenv("APP_URL", "").rstrip("/")
+    if env_app_url:
+        return env_app_url
+    return ""
+
+
+def _widget_src_url(public_base: str) -> str:
+    if PUBLIC_WIDGET_URL:
+        return PUBLIC_WIDGET_URL
+    if public_base:
+        return f"{public_base}/static/tts-widget.v1.js"
+    return "/static/tts-widget.v1.js"
 
 def _tier_from_price(price_id: str) -> str | None:
     if not price_id:
@@ -1541,19 +1654,110 @@ def _save_tenant_store(data: dict) -> None:
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
     tmp.replace(TENANT_STORE)
 
-async def _send_resend_email(to_email: str, tenant_key: str, tier: str) -> bool:
+def _load_notify_store() -> dict:
+    if not NOTIFY_STORE.exists():
+        return {}
+    try:
+        return json.loads(NOTIFY_STORE.read_text("utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_notify_store(data: dict) -> None:
+    NOTIFY_STORE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = NOTIFY_STORE.with_suffix(".part")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(NOTIFY_STORE)
+
+
+def _email_for_tenant(tenant_key: str) -> str | None:
+    store = _load_tenant_store()
+    for email, meta in store.items():
+        if isinstance(meta, dict) and meta.get("tenant_key") == tenant_key:
+            return email
+    return None
+
+
+def _maybe_send_quota_email(tenant: Tenant, quota: int, request: Request | None = None) -> bool:
+    if not RESEND_API_KEY or not EMAIL_FROM:
+        return False
+    to_email = _email_for_tenant(tenant.tenant_key)
+    if not to_email:
+        return False
+    now = datetime.now(timezone.utc)
+    notify = _load_notify_store()
+    last_raw = notify.get(tenant.tenant_key)
+    if last_raw:
+        try:
+            last_dt = datetime.fromisoformat(last_raw)
+            if now - last_dt < timedelta(hours=24):
+                return False
+        except Exception:
+            pass
+    public_base = _public_base_from_request(request)
+    site_url = public_base or os.getenv("APP_URL", "").rstrip("/")
+    safe_site = escape(site_url) if site_url else None
+    cta = (
+        f'<p><a href="{safe_site}">Upgrade your plan</a> or reply to this email if you need help.</p>'
+        if safe_site
+        else "<p>Reply to this email to upgrade your plan or ask for help.</p>"
+    )
+    plan_label = (tenant.plan_tier or "trial").title()
+    html = (
+        f"<p>You reached the monthly render limit for the {escape(plan_label)} plan.</p>"
+        f"<p>Already-generated audio will keep playing for your readers.</p>"
+        f"<p>Plan limit: {int(quota)} seconds. Used: {int(tenant.used_seconds_month)} seconds.</p>"
+        f"{cta}"
+    )
+    try:
+        resp = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": EMAIL_FROM,
+                "to": [to_email],
+                "subject": "EasyAudio quota reached",
+                "html": html,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        notify[tenant.tenant_key] = now.isoformat()
+        _save_notify_store(notify)
+        return True
+    except Exception as e:
+        logger.warning("quota notify send failed: %s", e)
+        return False
+
+
+async def _send_resend_email(to_email: str, tenant_key: str, tier: str, request: Request | None = None) -> bool:
     if not RESEND_API_KEY or not EMAIL_FROM or not to_email:
         return False
+    public_base = _public_base_from_request(request)
+    widget_src = _widget_src_url(public_base)
+    safe_public = escape(public_base) if public_base else ""
+    safe_widget = escape(widget_src)
+    plan_label = (tier or "trial").title()
+    help_line = "<p>If you want help installing, book a quick setup call on our website.</p>"
+    if safe_public:
+        help_line = (
+            f'<p>If you want help installing, <a href="{safe_public}">book a quick setup call on our website</a>.</p>'
+        )
     snippet = f"""<script
-  src="{PUBLIC_WIDGET_URL}"
-  data-ail-api-base="{PUBLIC_API_BASE}"
+  src="{widget_src}"
+  data-ail-api-base="{public_base}"
   data-ail-tenant="{tenant_key}">
 </script>"""
     html = (
-        f"<p>Your EasyAudio plan: <strong>{tier.title()}</strong></p>"
-        f"<p>Your tenant key: <code>{tenant_key}</code></p>"
-        f"<p>Install snippet:</p><pre>{snippet}</pre>"
-        f"<p>Paste this right before </body> on any page you want audio.</p>"
+        "<p>Welcome to EasyAudio.</p>"
+        "<p>EasyAudio converts your articles to audio for your readers.</p>"
+        f"{help_line}"
+        "<p>If you do not see this email, check Spam or Promotions and mark it as safe.</p>"
+        f"<p>Your plan: <strong>{escape(plan_label)}</strong></p>"
+        f"<p>Tenant key:</p><pre><code>{escape(tenant_key)}</code></pre>"
+        f"<p>Install snippet:</p><pre><code>{escape(snippet)}</code></pre>"
+        f"<p>Widget source: {safe_widget or 'static/tts-widget.v1.js'}</p>"
+        f"<p>API base: {safe_public or 'use your site URL if not set above'}</p>"
     )
     client: httpx.AsyncClient = app.state.http_client
     try:
@@ -1563,7 +1767,7 @@ async def _send_resend_email(to_email: str, tenant_key: str, tier: str) -> bool:
             json={
                 "from": EMAIL_FROM,
                 "to": [to_email],
-                "subject": "Your EasyAudio install snippet",
+                "subject": "Welcome to EasyAudio - your embed is ready",
                 "html": html,
             },
             timeout=15,
@@ -1647,7 +1851,7 @@ async def stripe_webhook(request: Request):
             tier,
             stripe_customer_id=full_session.get("customer"),
         )
-        emailed = await _send_resend_email(cust_email, tenant_key, tier)
+        emailed = await _send_resend_email(cust_email, tenant_key, tier, request=request)
         logger.info(
             "[provision] email=%s tier=%s tenant_key=%s emailed=%s",
             cust_email,
@@ -1711,7 +1915,7 @@ def tenants_stats():
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
 async def tts(req: TTSRequest, request: Request):
-    tenant_id = get_validated_tenant(request)
+    tenant_id = get_validated_tenant(request, body=req)
     guard_request(request)
     sample_text = (
         "This is a short sample paragraph to verify streaming text to speech. "
@@ -1914,7 +2118,7 @@ class ArticleAudioRequest(BaseModel):
 # POST the same text twice → first call MISS, second HIT, same audio output.
 @app.post("/api/article-audio")
 async def article_audio(req: ArticleAudioRequest, request: Request):
-    tenant_id = get_validated_tenant(request)
+    tenant_id = get_validated_tenant(request, body=req)
     tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
 
     raw_text = (req.text or "").strip()
@@ -1995,6 +2199,8 @@ class ReadRequest(BaseModel):
 # ---- READ: fetch article → extract → prosody → stream (cached) ----
 @app.post("/read")
 async def read(req: ReadRequest, request: Request):
+    tenant_id = get_validated_tenant(request, body=req)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     guard_request(request)
     if not (req.text or req.url):
         raise HTTPException(400, "Provide 'text' or 'url'")
@@ -2031,21 +2237,33 @@ async def read(req: ReadRequest, request: Request):
     if DEMO_MODE:
         text = text[:MAX_CHARS]
     # Use the shared cached streamer (disk + memory). This saves credits.
-    return await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID, voice_settings=voice_settings, tone=tone)
+    usage_seconds = estimate_seconds_from_text(text)
+    resp = await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID, voice_settings=voice_settings, tone=tone)
+    if usage_seconds:
+        record_tenant_usage_seconds(tenant_id, usage_seconds)
+    return resp
 
 @app.get("/read")
-async def read(url: str, voice: str | None = None, model: str | None = None):
+async def read(request: Request, url: str, voice: str | None = None, model: str | None = None):
+    tenant_id = get_validated_tenant(request)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     title, author, text = extract_article(url)
     narration = prepare_article(title, author, text)
     # stream_tts_for_text is async and already returns a StreamingResponse
-    return await stream_tts_for_text(
+    usage_seconds = estimate_seconds_from_text(narration)
+    resp = await stream_tts_for_text(
         narration,
         voice_id=voice or VOICE_ID,
         model_id=model or MODEL_ID,
     )
+    if usage_seconds:
+        record_tenant_usage_seconds(tenant_id, usage_seconds)
+    return resp
 
 @app.get("/read_chunked")
-async def read_chunked(url: str, voice: str | None = None, model: str | None = None):
+async def read_chunked(request: Request, url: str, voice: str | None = None, model: str | None = None):
+    tenant_id = get_validated_tenant(request)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     # 1) Extract & prepare
     title, author, text = extract_article(url)
     cleaned = preprocess_for_tts(text or "")
@@ -2056,13 +2274,19 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
         raise HTTPException(status_code=422, detail="No narratable text extracted from page")
 
     parts = chunk_by_sentence(narration, target=1200, hard_max=1600)
+    usage_seconds = estimate_seconds_from_text(narration)
+    usage_recorded = False
 
     # 2) Prefetch-to-bytes for each chunk (safe and predictable)
     async def multi():
+        nonlocal usage_recorded
         for i, part in enumerate(parts):
             try:
                 processed_part = enhance_prosody(preprocess_for_tts(part))
                 data = await tts_bytes(processed_part, voice or VOICE_ID, model or MODEL_ID)
+                if usage_seconds and not usage_recorded:
+                    record_tenant_usage_seconds(tenant_id, usage_seconds)
+                    usage_recorded = True
                 # yield the whole chunk as one piece (or slice into smaller pieces if you prefer)
                 yield data
             except Exception as e:
@@ -2070,7 +2294,7 @@ async def read_chunked(url: str, voice: str | None = None, model: str | None = N
                 print({"event": "chunk_fail", "i": i, "err": str(e)[:300]})
                 break
 
-    return StreamingResponse(multi(), media_type="audio/mpeg")
+    return StreamingResponse(multi(), media_type="audio/mpeg", headers={"X-AIL-Tenant": tenant_id})
 
 
 # _split_text_for_tts: reserved for future chunked synthesis
@@ -2099,6 +2323,7 @@ def voices():
 
 @app.get("/tts_full")
 def tts_full(
+    request: Request,
     text: str = Query(..., max_length=20000),
     voice: str | None = Query(None),
     model: str = Query("eleven_turbo_v2"),
@@ -2107,10 +2332,13 @@ def tts_full(
     style: float = Query(0.40),
     speaker_boost: bool = Query(True),
 ):
+    tenant_id = get_validated_tenant(request)
+    ensure_tenant_quota_ok(tenant_id, request=request)
     voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided.")
     clean = preprocess_for_tts(text)
+    usage_seconds = estimate_seconds_from_text(clean)
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}"
     headers = {
         "xi-api-key": os.environ.get("ELEVENLABS_API_KEY",""),
@@ -2130,6 +2358,8 @@ def tts_full(
     r = http.post(url, headers=headers, json=payload, timeout=60)
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text)
+    if usage_seconds:
+        record_tenant_usage_seconds(tenant_id, usage_seconds)
     return Response(content=r.content, media_type="audio/mpeg")
 
 
