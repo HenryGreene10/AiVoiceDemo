@@ -1,5 +1,6 @@
 # main.py
 import logging
+import io
 import math
 import os, hashlib, requests, time, httpx
 import secrets
@@ -16,7 +17,7 @@ from fastapi import Query, Body
 import trafilatura, re, requests as http, json
 from html import escape
 from trafilatura.metadata import extract_metadata
-from typing import Tuple, Optional
+from typing import Tuple
 from urllib.parse import urlparse, quote
 import socket, ipaddress, asyncio, json
 import re
@@ -708,132 +709,169 @@ async def metrics_json(n: int = Query(200, ge=1, le=5000), token: str = Query(""
     except Exception as e:
         raise HTTPException(500, f"metrics read error: {e}")
 
-# --- analytics CSV tracking ---
-ANALYTICS_CSV = (CACHE_DIR / "analytics.csv").resolve()
+# --- analytics tracking (JSONL, internal-only) ---
+ANALYTICS_JSONL = (CACHE_ROOT / "analytics.jsonl").resolve()
+ANALYTICS_EVENTS = {"click_listen", "play_complete", "cache_hit", "cache_miss"}
 _analytics_lock = Lock()
 
-class MetricReq(BaseModel):
-    event: str            # "click"|"start"|"stop"|"progress"|"ended"
-    seconds: float = 0.0  # for ended / stop
-    url: Optional[str] = None
-    voice: Optional[str] = None
+
+class AnalyticsEvent(BaseModel):
+    event: str
     tenant: Optional[str] = None
-    user_agent: Optional[str] = None
+    tenant_key: Optional[str] = None
+    page_url: Optional[str] = None
+    referrer: Optional[str] = None
+    ts: Optional[int] = None
+
+
+def _valid_admin_token(token: str) -> bool:
+    expected = ADMIN_TOKEN or ADMIN_SECRET
+    if not expected:
+        return False
+    return token == expected
+
+
+def _require_admin_token(token: str) -> None:
+    if not token or not _valid_admin_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _resolve_valid_tenant(request: Request, body: object | None = None) -> str | None:
+    tenant_id = _extract_tenant_key(request, body=body)
+    if not tenant_id:
+        return None
+    if TENANT_ALLOWLIST_ENFORCE:
+        allowed = set(get_tenant_settings().tenant_keys)
+        if allowed and tenant_id not in allowed:
+            return None
+    try:
+        _load_tenant_record(tenant_id)
+    except Exception:
+        return None
+    return tenant_id
+
+
+def _append_analytics_event(
+    event: str,
+    tenant: str,
+    page_url: str = "",
+    referrer: str = "",
+    ts_ms: int | None = None,
+) -> None:
+    ev = (event or "").strip().lower()
+    if not tenant or ev not in ANALYTICS_EVENTS:
+        return
+    record = {
+        "ts": int(ts_ms if ts_ms is not None else time.time() * 1000),
+        "event": ev,
+        "tenant": tenant,
+        "page_url": page_url or "",
+        "referrer": referrer or "",
+    }
+    try:
+        with _analytics_lock:
+            with ANALYTICS_JSONL.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, separators=(",", ":"), ensure_ascii=False))
+                f.write("\n")
+    except Exception as e:
+        logger.warning("analytics write failed: %s", e)
+
 
 @app.post("/metric")
-def metric(req: MetricReq, request: Request, x_tenant_key: Optional[str] = Header(default=None)):
-    row = [
-        int(time.time()),
-        req.event,
-        round(float(req.seconds or 0), 2),
-        req.url or str(request.headers.get("referer", "")),
-        req.voice or os.getenv("VOICE_ID",""),
-        (req.tenant or x_tenant_key or ""),
-        request.client.host,
-        request.headers.get("user-agent","")
-    ]
-    with _analytics_lock:
-        new_file = not ANALYTICS_CSV.exists()
-        with ANALYTICS_CSV.open("a", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            if new_file:
-                w.writerow(["ts","event","seconds","url","voice","tenant","ip","ua"])
-            w.writerow(row)
+def metric(req: AnalyticsEvent, request: Request):
+    tenant_id = _resolve_valid_tenant(request, body=req)
+    ev = (req.event or "").strip().lower()
+    if not tenant_id or ev not in ANALYTICS_EVENTS:
+        return Response(status_code=204)
+    page_url = req.page_url or request.query_params.get("url") or request.headers.get("referer", "") or ""
+    referrer = req.referrer or request.headers.get("referer", "") or ""
+    ts_ms = req.ts if req.ts else None
+    _append_analytics_event(ev, tenant_id, page_url=page_url, referrer=referrer, ts_ms=ts_ms)
     return {"ok": True}
 
-@app.get("/admin/analytics.csv")
-def analytics_csv():
-    if ANALYTICS_CSV.exists():
-        return FileResponse(str(ANALYTICS_CSV), media_type="text/csv", filename="analytics.csv")
-    raise HTTPException(404, "no analytics yet")
 
-# (Optional) filter by tenant or since timestamp
-@app.get("/admin/analytics.json")
-def analytics_summary(tenant: Optional[str] = None, since_ts: Optional[int] = None):
-    out = {
-        "total_impressions": 0,
-        "total_clicks": 0,
-        "total_seconds": 0.0,
-        "by_url": {},
-        "by_tenant": {}
-    }
-    if not ANALYTICS_CSV.exists():
-        return out
-
-    with ANALYTICS_CSV.open("r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            try: ts = int(r.get("ts") or 0)
-            except: ts = 0
-            if since_ts and ts < since_ts:
-                continue
-            if tenant and (r.get("tenant") or "") != tenant:
-                continue
-
-            ev = (r.get("event") or "").lower()
-            secs = float(r.get("seconds") or 0)
-            url  = r.get("url") or ""
-            tnt  = r.get("tenant") or ""
-
-            if ev == "impression": out["total_impressions"] += 1
-            if ev == "click":       out["total_clicks"] += 1
-            if ev in ("ended","stop"): out["total_seconds"] += secs
-
-            if url:
-                b = out["by_url"].setdefault(url, {"impressions":0,"clicks":0,"seconds":0.0})
-                if ev == "impression": b["impressions"] += 1
-                if ev == "click":       b["clicks"] += 1
-                if ev in ("ended","stop"): b["seconds"] += secs
-
-            if tnt:
-                t = out["by_tenant"].setdefault(tnt, {"impressions":0,"clicks":0,"seconds":0.0})
-                if ev == "impression": t["impressions"] += 1
-                if ev == "click":       t["clicks"] += 1
-                if ev in ("ended","stop"): t["seconds"] += secs
-
-    out["total_seconds"] = round(out["total_seconds"], 2)
-    # compute CTRs
-    for d in (out["by_url"].values(), out["by_tenant"].values()):
-        for v in d:
-            pass
-    return out
-
-@app.get("/admin/analytics_timeseries.json")
-def analytics_timeseries(days: int = 30, tenant: Optional[str] = None):
-    """Return last N days of clicks & seconds (UTC date buckets)."""
-    if not ANALYTICS_CSV.exists():
-        return {"days": [], "clicks": [], "seconds": []}
-
-    # build buckets
-    today = datetime.now(timezone.utc).date()
-    order = [str(today.fromordinal(today.toordinal()-i)) for i in range(days)][::-1]
-    clicks = {d:0 for d in order}
-    seconds = {d:0.0 for d in order}
-
-    with ANALYTICS_CSV.open("r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            if tenant and (r.get("tenant") or "") != tenant:
+def _iter_analytics(since_ts: int, tenant: str | None):
+    if not ANALYTICS_JSONL.exists():
+        return
+    with ANALYTICS_JSONL.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
                 continue
             try:
-                ts = int(r.get("ts") or 0)
-                d = datetime.fromtimestamp(ts, timezone.utc).date()
-                key = str(d)
-            except:
+                obj = json.loads(line)
+            except Exception:
                 continue
-            if key not in clicks:  # out of range
+            try:
+                ts = int(obj.get("ts") or 0)
+            except Exception:
+                ts = 0
+            if since_ts and ts < since_ts:
                 continue
+            tenant_val = obj.get("tenant") or ""
+            if tenant and tenant_val != tenant:
+                continue
+            ev = (obj.get("event") or "").strip().lower()
+            if ev not in ANALYTICS_EVENTS:
+                continue
+            yield {
+                "ts": ts,
+                "event": ev,
+                "tenant": tenant_val,
+                "page_url": obj.get("page_url") or "",
+                "referrer": obj.get("referrer") or "",
+            }
 
-            ev = (r.get("event") or "").lower()
-            secs = float(r.get("seconds") or 0)
-            if ev == "click": clicks[key] += 1
-            if ev in ("ended","stop"): seconds[key] += secs
 
+@app.get("/admin/analytics_summary.json")
+def analytics_summary_admin(
+    token: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    tenant: Optional[str] = Query(None),
+):
+    _require_admin_token(token)
+    now_ms = int(time.time() * 1000)
+    since_ts = now_ms - int(days * 86400 * 1000)
+    totals = {ev: 0 for ev in ANALYTICS_EVENTS}
+    by_tenant: dict[str, dict[str, int]] = {}
+    for rec in _iter_analytics(since_ts, tenant):
+        ev = rec["event"]
+        tenant_val = rec["tenant"] or ""
+        totals[ev] = totals.get(ev, 0) + 1
+        if tenant_val:
+            bucket = by_tenant.setdefault(tenant_val, {k: 0 for k in ANALYTICS_EVENTS})
+            bucket[ev] = bucket.get(ev, 0) + 1
     return {
-        "days": order,
-        "clicks": [clicks[d] for d in order],
-        "seconds": [round(seconds[d],2) for d in order],
+        "range_days": days,
+        "since_ts": since_ts,
+        "totals": totals,
+        "by_tenant": by_tenant,
     }
+
+
+@app.get("/admin/analytics.csv")
+def analytics_csv_admin(
+    token: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    tenant: Optional[str] = Query(None),
+):
+    _require_admin_token(token)
+    now_ms = int(time.time() * 1000)
+    since_ts = now_ms - int(days * 86400 * 1000)
+    counts: dict[tuple[str, str, str], int] = {}
+    for rec in _iter_analytics(since_ts, tenant):
+        try:
+            date_key = datetime.fromtimestamp(rec["ts"] / 1000, timezone.utc).date().isoformat()
+        except Exception:
+            continue
+        key = (date_key, rec["tenant"] or "", rec["event"])
+        counts[key] = counts.get(key, 0) + 1
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", "tenant", "event", "count"])
+    for (date_key, tnt, ev), count in sorted(counts.items()):
+        writer.writerow([date_key, tnt, ev, count])
+    return Response(content=output.getvalue(), media_type="text/csv")
 
 
 class TenantCreateRequest(BaseModel):
@@ -999,6 +1037,8 @@ async def api_tts(
 ):
     tenant_id = get_validated_tenant(request, body=body)
     rate_limit_check(request, body=body)
+    page_url = request.query_params.get("url") or request.headers.get("referer", "") or ""
+    referrer = request.headers.get("referer", "") or ""
 
     v = (voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
     if not v:
@@ -1014,6 +1054,7 @@ async def api_tts(
 
     # If file exists & non-empty -> HIT
     if outp.exists() and outp.stat().st_size > 0:
+        _append_analytics_event("cache_hit", tenant_id, page_url=page_url, referrer=referrer)
         return {
             "audioUrl": public_url(f"/cache/{outp.name}"),
             "hit": True,
@@ -1026,6 +1067,7 @@ async def api_tts(
     async with lock:
         # re-check after awaiting
         if outp.exists() and outp.stat().st_size > 0:
+            _append_analytics_event("cache_hit", tenant_id, page_url=page_url, referrer=referrer)
             return {
                 "audioUrl": public_url(f"/cache/{outp.name}"),
                 "hit": True,
@@ -1048,6 +1090,7 @@ async def api_tts(
         duration = estimate_seconds_from_text(text_for_tts)
     if duration:
         record_tenant_usage_seconds(tenant_id, duration)
+    _append_analytics_event("cache_miss", tenant_id, page_url=page_url, referrer=referrer)
 
     return {
         "audioUrl": public_url(f"/cache/{outp.name}"),

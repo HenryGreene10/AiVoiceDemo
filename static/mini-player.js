@@ -338,6 +338,8 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     const metaSubtitle = (meta?.subtitle || '').trim();
     const metaHref = meta?.href || '';
     const metaUrl = typeof meta?.url === 'string' ? meta.url : '';
+    const metricPageUrl = metaHref || metaUrl || window.location.href;
+    const metricReferrer = document.referrer || "";
 
     const titleEl = q('#mp-title');
     if (titleEl) {
@@ -469,7 +471,11 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     audio.addEventListener('play',  ()=> setPlayVisual(true));
 
     // Clear when finished
-    audio.addEventListener('ended', ()=>{ setPlayVisual(false); pos.clearIfEnded(); });
+    audio.addEventListener('ended', ()=>{ 
+      setPlayVisual(false);
+      pos.clearIfEnded();
+      try { window.__AIL_sendMetric?.("play_complete", { pageUrl: metricPageUrl, referrer: metricReferrer }); } catch {}
+    });
 
     const readyHandler = () => markReady();
     audio.addEventListener('canplay', readyHandler);

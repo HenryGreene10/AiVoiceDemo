@@ -578,6 +578,33 @@ function findArticleRoot() {
 
       window._AIL_DEBUG = { base: runtimeConfig.apiBase, tenant: runtimeConfig.tenant };
 
+      function sendMetric(eventName, extra = {}) {
+        try {
+          const base = (runtimeConfig.apiBase || window.location.origin).replace(/\/+$/, "");
+          const payload = {
+            event: eventName,
+            tenant: runtimeConfig.tenant,
+            page_url: extra.pageUrl || window.location.href,
+            referrer: typeof extra.referrer === "string" ? extra.referrer : (document.referrer || ""),
+            ts: Date.now()
+          };
+          const opts = {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-tenant-key": runtimeConfig.tenant
+            },
+            body: JSON.stringify(payload)
+          };
+          try { opts.keepalive = true; } catch {}
+          fetch(base + "/metric", opts).catch(() => {});
+        } catch {
+          // swallow
+        }
+      }
+
+      window.__AIL_sendMetric = sendMetric;
+
       function attachListenHandler(btn) {
         if (btn.__ailBound) return;
         btn.__ailBound = true;
@@ -586,6 +613,7 @@ function findArticleRoot() {
           ev.preventDefault();
           console.log("[AIL] Listen click");
           console.log("[AIL] Listen handler fired", { buttonId: btn.id || null });
+          try { sendMetric("click_listen"); } catch {}
 
           try {
             const srcBase = (scriptEl && scriptEl.src) || location.href;
