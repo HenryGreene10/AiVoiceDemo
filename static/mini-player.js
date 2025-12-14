@@ -2,6 +2,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
 
 (function(){
   const $ = (s,r=document)=>r.querySelector(s);
+  let lastCompletedSrc = null;
 
   // --- FAB control ------------------------------------------------------------
   let FAB = null;           // we remember the element we hid
@@ -361,6 +362,7 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
       const lastSrc = audio.dataset?.ailLastSrc || '';
       const isNewSource = lastSrc !== metaUrl;
       if (isNewSource) {
+        lastCompletedSrc = null;
         markLoading();
         if (audio.__ailStartDelay) {
           clearTimeout(audio.__ailStartDelay);
@@ -471,11 +473,18 @@ console.log('[AIL] mini v27 LIVE', new Date().toISOString());
     audio.addEventListener('play',  ()=> setPlayVisual(true));
 
     // Clear when finished
-    audio.addEventListener('ended', ()=>{ 
+    if (audio.__ailEndedHandler) {
+      audio.removeEventListener('ended', audio.__ailEndedHandler);
+    }
+    const onEnded = ()=>{ 
       setPlayVisual(false);
       pos.clearIfEnded();
+      if (audio.src && lastCompletedSrc === audio.src) return;
+      lastCompletedSrc = audio.src || null;
       try { window.__AIL_sendMetric?.("play_complete", { pageUrl: metricPageUrl, referrer: metricReferrer }); } catch {}
-    });
+    };
+    audio.__ailEndedHandler = onEnded;
+    audio.addEventListener('ended', onEnded);
 
     const readyHandler = () => markReady();
     audio.addEventListener('canplay', readyHandler);

@@ -23,7 +23,7 @@ export default function Page() {
           {/* HERO */}
         <section className="ea-hero">
           <div className="ea-card ea-hero-card">
-            <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listening Experience</h1>
+            <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listeni`ng Experience</h1>
           </div>
         </section>
 
@@ -53,7 +53,7 @@ export default function Page() {
                 overlapping language processing areas in the brain, causing a stronger memory trace. With audio available, your viewers will spend more time on your site, stay engaged longer, and share your content more frequently.  
               </p>
               <p>
-                EasyAudio makes it effortless to add clean and natural voiceovers to your page. We add a single script and every article on your site instantly becomes playable. 
+                EasyAudio makes it effortless to add clean and natural voiceovers to your page. Add a single script to your site and your articles instantly becomes playable. 
                 A “Listen” button appears under the title, as shown in the demo, and plays narration through the built-in mini-player. If you update your text, the audio will update automatically!
               </p>
               <p>
