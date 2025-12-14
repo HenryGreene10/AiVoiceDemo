@@ -1735,14 +1735,12 @@ async def _send_resend_email(to_email: str, tenant_key: str, tier: str, request:
         return False
     public_base = _public_base_from_request(request)
     widget_src = _widget_src_url(public_base)
-    safe_public = escape(public_base) if public_base else ""
-    safe_widget = escape(widget_src)
     plan_label = (tier or "trial").title()
-    help_line = "<p>If you want help installing, book a quick setup call on our website.</p>"
-    if safe_public:
-        help_line = (
-            f'<p>If you want help installing, <a href="{safe_public}">book a quick setup call on our website</a>.</p>'
-        )
+    calendly_url = "https://calendly.com/henry10greene/30min"
+    help_line = (
+        f'<p>If you need help installing, book a free installation:<br>'
+        f'<a href="{calendly_url}">{calendly_url}</a></p>'
+    )
     snippet = f"""<script
   src="{widget_src}"
   data-ail-api-base="{public_base}"
@@ -1752,12 +1750,11 @@ async def _send_resend_email(to_email: str, tenant_key: str, tier: str, request:
         "<p>Welcome to EasyAudio.</p>"
         "<p>EasyAudio converts your articles to audio for your readers.</p>"
         f"{help_line}"
-        "<p>If you do not see this email, check Spam or Promotions and mark it as safe.</p>"
         f"<p>Your plan: <strong>{escape(plan_label)}</strong></p>"
         f"<p>Tenant key:</p><pre><code>{escape(tenant_key)}</code></pre>"
         f"<p>Install snippet:</p><pre><code>{escape(snippet)}</code></pre>"
-        f"<p>Widget source: {safe_widget or 'static/tts-widget.v1.js'}</p>"
-        f"<p>API base: {safe_public or 'use your site URL if not set above'}</p>"
+        "<p>Paste this snippet right before the closing &lt;/body&gt; tag on the page where you want the Listen button to appear.</p>"
+        "<p>After checkout, you'll receive a unique key. (check spam)</p>"
     )
     client: httpx.AsyncClient = app.state.http_client
     try:
@@ -1769,6 +1766,7 @@ async def _send_resend_email(to_email: str, tenant_key: str, tier: str, request:
                 "to": [to_email],
                 "subject": "Welcome to EasyAudio - your embed is ready",
                 "html": html,
+                "tracking": {"clicks": False},
             },
             timeout=15,
         )
