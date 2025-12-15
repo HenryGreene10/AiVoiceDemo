@@ -23,7 +23,7 @@ export default function Page() {
           {/* HERO */}
         <section className="ea-hero">
           <div className="ea-card ea-hero-card">
-            <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listeni`ng Experience</h1>
+            <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listening Experience</h1>
           </div>
         </section>
 
