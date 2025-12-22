@@ -41,3 +41,8 @@ frontend/.turbo/
 frontend/.env.local
 frontend/.env.development.local
 frontend/.env.production.local
+# local keys
+henryKey
+henryKey.pub
+*.pem
+*.key
