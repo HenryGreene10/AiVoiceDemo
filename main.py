@@ -35,6 +35,7 @@ from app.tenant_store import (
     get_tenant,
     init_db as init_tenant_db,
     list_tenants,
+    normalize_domain,
     normalize_domains,
     quota_for_plan,
     record_usage_seconds,
@@ -103,17 +104,10 @@ def _extract_tenant_key(request: Request, body: object | None = None) -> str | N
 def get_request_domain(request: Request) -> str | None:
     origin = request.headers.get("origin") or ""
     referer = request.headers.get("referer") or ""
-    candidate = origin.strip() or referer.strip()
-    if not candidate or candidate.lower() == "null":
-        return None
-    if "://" not in candidate:
-        candidate = f"https://{candidate}"
-    try:
-        parsed = urlparse(candidate)
-    except Exception:
-        return None
-    host = (parsed.hostname or "").strip().lower().rstrip(".")
-    return host or None
+    domain = normalize_domain(origin)
+    if domain:
+        return domain
+    return normalize_domain(referer)
 
 
 def is_domain_allowed(domain: str, allowed_domains: list[str]) -> bool:

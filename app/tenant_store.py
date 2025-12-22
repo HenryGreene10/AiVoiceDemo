@@ -162,6 +162,8 @@ def deserialize_domains(value: str | None) -> list[str]:
         data = json.loads(value)
         if isinstance(data, list):
             return [str(x).strip() for x in data if str(x).strip()]
+        if isinstance(data, str) and data.strip():
+            return [data.strip()]
     except Exception:
         pass
     parts = [p.strip() for p in value.split(",") if p.strip()]
