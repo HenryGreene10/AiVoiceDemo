@@ -195,7 +195,7 @@ export default function Page() {
                       }}
                     >{`<script
       data-ail-api-base="https://hgtts.onrender.com"
-      data-ail-tenant="27929280-aff3-4827-bb5f-4bf5cae35128"
+      data-ail-tenant="________"
       src="https://hgtts.onrender.com/static/tts-widget.v1.js">
 </script>`}</pre>
                   </details>
