@@ -1,10 +1,15 @@
 // v108 — inline pill under H1, clean narration order, skip clutter, clean start
 // NOTE: Auto-insertion uses MutationObserver to handle SPA/hydrated news sites.
 // Cache behavior, hashing, and trial limits are owned by the backend and are not modified here.
-console.log("[AIL] widget v108 LIVE", new Date().toISOString());
 
 (() => {
   "use strict";
+  const body = document.body;
+  if (!body || !body.classList) return;
+  if (!body.classList.contains("post-template")) return;
+  if ((body.className || "").includes("tag-no-audio")) return;
+
+  console.log("[AIL] widget v108 LIVE", new Date().toISOString());
   if (window.__ttsWidgetLoaded) return;
   window.__ttsWidgetLoaded = true;
 
@@ -493,7 +498,14 @@ function findArticleRoot() {
   function extractArticleParts(listenButton) {
     let article = getExplicitArticle();
     let heading = null;
+    const preferredRoot =
+      document.querySelector(".post-content") ||
+      document.querySelector(".post-full-content") ||
+      document.querySelector("article");
 
+    if (!article && preferredRoot) {
+      article = preferredRoot;
+    }
     if (!article && listenButton) {
       article = listenButton.closest("article,[itemtype*='Article'],[role='main'],main");
     }
