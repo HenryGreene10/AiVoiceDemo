@@ -28,13 +28,14 @@ from datetime import datetime, timezone, date, timedelta
 from mutagen.mp3 import MP3
 import stripe
 from app.config.tenants import TENANTS, TENANT_USAGE
-from app.config.settings import TENANT_KEYS_ENV, get_tenant_settings
 from app.tenant_store import (
     Tenant,
     create_tenant,
+    deserialize_domains,
     get_tenant,
     init_db as init_tenant_db,
     list_tenants,
+    normalize_domains,
     quota_for_plan,
     record_usage_seconds,
     refresh_renewal,
@@ -50,9 +51,18 @@ CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 logger.info(f"[cache] CACHE_ROOT={CACHE_ROOT}")
 
 # Tenant keys:
-# - Configure TENANT_KEYS="demo,demo-blog-01" (comma-separated) to allow widget tenants.
-# - get_validated_tenant() (below) enforces that list using the x-tenant-key header the widget sets from its data-ail-tenant attribute.
-# - All TTS/cache endpoints call that helper once so every request is traced to a validated tenant.
+# - data-ail-tenant is a public site key sent as x-tenant-key from the widget.
+# - Tenant existence, quotas, and domain allowlist live in the DB (TENANT_KEYS is deprecated).
+# - All TTS/cache endpoints call get_validated_tenant() so every request maps to a tenant.
+
+def _redact_key(value: str | None) -> str:
+    if not value:
+        return "missing"
+    raw = value.strip()
+    if len(raw) <= 10:
+        return f"{raw[:2]}...{raw[-2:]}"
+    return f"{raw[:6]}...{raw[-4:]}"
+
 
 def _tenant_from_body(body: object) -> str | None:
     if body is None:
@@ -90,6 +100,32 @@ def _extract_tenant_key(request: Request, body: object | None = None) -> str | N
     return None
 
 
+def get_request_domain(request: Request) -> str | None:
+    origin = request.headers.get("origin") or ""
+    referer = request.headers.get("referer") or ""
+    candidate = origin.strip() or referer.strip()
+    if not candidate or candidate.lower() == "null":
+        return None
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    try:
+        parsed = urlparse(candidate)
+    except Exception:
+        return None
+    host = (parsed.hostname or "").strip().lower().rstrip(".")
+    return host or None
+
+
+def is_domain_allowed(domain: str, allowed_domains: list[str]) -> bool:
+    if not domain:
+        return False
+    return domain in allowed_domains
+
+
+def _get_allowed_domains(tenant: Tenant) -> list[str]:
+    return normalize_domains(deserialize_domains(getattr(tenant, "allowed_domains", None)))
+
+
 def _tenant_error(message: str, code: str = "invalid_tenant") -> None:
     raise HTTPException(status_code=401, detail={"error": code, "message": message})
 
@@ -104,26 +140,50 @@ def _load_tenant_record(tenant_id: str) -> Tenant:
 
 
 def get_validated_tenant(request: Request, body: object | None = None) -> str:
-    """Resolve tenant from request metadata and enforce the env-configured allowlist."""
+    """Resolve tenant from request metadata and enforce DB-backed tenant existence."""
     tenant_id = _extract_tenant_key(request, body=body)
-    # To onboard a new client, add their key to TENANT_KEYS in the environment and redeploy.
     if not tenant_id:
         logger.warning("[tenant] Missing tenant key")
         _tenant_error("Missing tenant key (x-tenant-key header, body.tenant, or tenant query param).", code="missing_tenant_key")
-
-    if TENANT_ALLOWLIST_ENFORCE:
-        allowed_keys = set(get_tenant_settings().tenant_keys)
-        if allowed_keys and tenant_id not in allowed_keys:
-            logger.warning(f"[tenant] Unknown tenant key (env allowlist): {tenant_id}")
-            _tenant_error(
-                f"Unknown tenant key. Update {TENANT_KEYS_ENV} to include '{tenant_id}'.",
-                code="invalid_tenant_key",
-            )
 
     # Persistent tenant store is the source of truth for quotas and existence.
     _load_tenant_record(tenant_id)
 
     return tenant_id
+
+
+def get_validated_tenant_record(
+    request: Request,
+    body: object | None = None,
+) -> tuple[str, Tenant]:
+    tenant_id = _extract_tenant_key(request, body=body)
+    if not tenant_id:
+        logger.warning("[tenant] Missing tenant key")
+        _tenant_error(
+            "Missing tenant key (x-tenant-key header, body.tenant, or tenant query param).",
+            code="missing_tenant_key",
+        )
+    tenant = _load_tenant_record(tenant_id)
+    return tenant_id, tenant
+
+
+def enforce_domain_allowlist(request: Request, tenant: Tenant, tenant_key: str) -> None:
+    domain = get_request_domain(request)
+    if not domain:
+        if DEMO_MODE:
+            logger.warning("[tenant] Missing origin/referer (demo allow) key=%s", _redact_key(tenant_key))
+            return
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "domain_required", "message": "Origin/Referer required"},
+        )
+
+    allowed = _get_allowed_domains(tenant)
+    if not allowed or not is_domain_allowed(domain, allowed):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "domain_not_allowed", "message": "Domain not allowed for this key"},
+        )
 
 
 def get_tenant_limits(tenant_id: str) -> Dict[str, Any]:
@@ -306,6 +366,7 @@ ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
 TENANT_ALLOWLIST_ENFORCE = os.getenv("TENANT_ALLOWLIST_ENFORCE", "0").strip().lower() in ("1","true","yes")
+# Deprecated: TENANT_KEYS/TENANT_ALLOWLIST_ENFORCE no longer gate tenant auth.
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
@@ -740,10 +801,6 @@ def _resolve_valid_tenant(request: Request, body: object | None = None) -> str |
     tenant_id = _extract_tenant_key(request, body=body)
     if not tenant_id:
         return None
-    if TENANT_ALLOWLIST_ENFORCE:
-        allowed = set(get_tenant_settings().tenant_keys)
-        if allowed and tenant_id not in allowed:
-            return None
     try:
         _load_tenant_record(tenant_id)
     except Exception:
@@ -779,7 +836,8 @@ def _append_analytics_event(
 
 @app.post("/metric")
 def metric(req: AnalyticsEvent, request: Request):
-    tenant_id = _resolve_valid_tenant(request, body=req)
+    tenant_id, tenant = get_validated_tenant_record(request, body=req)
+    enforce_domain_allowlist(request, tenant, tenant_id)
     ev = (req.event or "").strip().lower()
     if not tenant_id or ev not in ANALYTICS_EVENTS:
         return Response(status_code=204)
@@ -875,34 +933,61 @@ def analytics_csv_admin(
 
 
 class TenantCreateRequest(BaseModel):
-    plan_tier: str
+    plan_tier: str | None = None
+    domains: list[str] | str | None = None
+    contact_email: str | None = None
+    status: str | None = None
 
 
 @app.post("/admin/tenants")
 def create_tenant_admin(
     body: TenantCreateRequest,
     x_admin_secret: str | None = Header(default=None),
+    request: Request | None = None,
 ):
     """Provision a tenant key with plan + quota. Protected by ADMIN_SECRET."""
     if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    plan = (body.plan_tier or "").lower()
+    plan = (body.plan_tier or "trial").lower()
     if plan not in TIER_QUOTAS_SECONDS:
         raise HTTPException(
             status_code=400,
             detail="plan_tier must be one of: trial, creator, publisher, newsroom",
         )
 
+    domains = normalize_domains(body.domains)
+    if not domains:
+        raise HTTPException(status_code=400, detail="domains is required (exact domain list)")
+
+    status = (body.status or "active").strip().lower()
+
     with tenant_session() as session:
-        tenant = create_tenant(session, plan)
+        tenant = create_tenant(
+            session,
+            plan,
+            allowed_domains=domains,
+            status=status,
+            contact_email=body.contact_email,
+        )
         quota_seconds = quota_for_plan(plan)
+        public_base = _public_base_from_request(request)
+        widget_src = _widget_src_url(public_base)
+        embed_snippet = (
+            "<script\n"
+            f'  src="{widget_src}"\n'
+            f'  data-ail-api-base="{public_base}"\n'
+            f'  data-ail-tenant="{tenant.tenant_key}">\n'
+            "</script>"
+        )
         response = {
-            "tenant_key": tenant.tenant_key,
+            "public_site_key": tenant.tenant_key,
             "plan_tier": tenant.plan_tier,
             "quota_seconds_month": quota_seconds,
             "renewal_at": tenant.renewal_at,
             "created_at": tenant.created_at,
+            "allowed_domains": domains,
+            "embed_snippet": embed_snippet,
         }
 
     return response
@@ -1116,11 +1201,18 @@ def prepare_article(title: str, author: str, text: str) -> str:
 def debug_config():
     from os import getenv
     key = getenv("ELEVENLABS_API_KEY", "")
+    db_url = getenv("DATABASE_URL", "").strip()
+    db_path = getenv("TENANT_DB_PATH", "/cache/tenants.db")
+    tenants_db = "DATABASE_URL" if db_url else f"sqlite:{db_path}"
     return {
         "has_api_key": bool(key),
         "api_key_head": (key[:4] + "…" if key else None),
         "voice_id": VOICE_ID,
         "model_id": MODEL_ID,
+        "tenant_auth_mode": "db_allowlist_exact_domains",
+        "demo_mode": DEMO_MODE,
+        "require_domain_header": not DEMO_MODE,
+        "tenants_db": tenants_db,
     }
 
 
@@ -2159,7 +2251,8 @@ class ArticleAudioRequest(BaseModel):
 # POST the same text twice → first call MISS, second HIT, same audio output.
 @app.post("/api/article-audio")
 async def article_audio(req: ArticleAudioRequest, request: Request):
-    tenant_id = get_validated_tenant(request, body=req)
+    tenant_id, tenant = get_validated_tenant_record(request, body=req)
+    enforce_domain_allowlist(request, tenant, tenant_id)
     tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
 
     raw_text = (req.text or "").strip()

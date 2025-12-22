@@ -34,6 +34,7 @@ def _base_tenants() -> Dict[str, Dict[str, Any]]:
 
 
 def _build_tenant_config() -> Dict[str, Dict[str, Any]]:
+    # Deprecated: TENANT_KEYS is legacy config for default limits, not auth.
     tenants = _base_tenants()
     settings = get_tenant_settings()
     default_limit = _default_max_renders()
