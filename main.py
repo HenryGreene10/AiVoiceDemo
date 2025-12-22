@@ -941,9 +941,9 @@ class TenantCreateRequest(BaseModel):
 
 @app.post("/admin/tenants", response_model=None)
 def create_tenant_admin(
+    request: Request,
     body: TenantCreateRequest,
     x_admin_secret: str | None = Header(default=None),
-    request: Request,
 ):
     """Provision a tenant key with plan + quota. Protected by ADMIN_SECRET."""
     if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
