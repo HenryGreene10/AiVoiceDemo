@@ -122,15 +122,6 @@ def _extract_tenant_key(request: Request, body: object | None = None) -> str | N
     return None
 
 
-def get_request_domain(request: Request) -> str | None:
-    origin = request.headers.get("origin") or ""
-    referer = request.headers.get("referer") or ""
-    domain = normalize_domain(origin)
-    if domain:
-        return domain
-    return normalize_domain(referer)
-
-
 def is_domain_allowed(domain: str, allowed_domains: list[str]) -> bool:
     if not domain:
         return False
@@ -141,29 +132,29 @@ def _get_allowed_domains(tenant: Tenant) -> list[str]:
     return deserialize_domains(getattr(tenant, "allowed_domains", None))
 
 
-def _tenant_error(message: str, code: str = "invalid_tenant") -> None:
+def _tenant_error(message: str, code: str = "tenant_not_found") -> None:
     raise HTTPException(status_code=401, detail={"error": code, "message": message})
+
+
+def _tenant_is_active(tenant: Tenant) -> bool:
+    status = (tenant.status or "active").strip().lower()
+    return status == "active"
 
 
 def _load_tenant_record(tenant_id: str) -> Tenant:
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_id)
         if not tenant:
-            _tenant_error("Unknown tenant key.", code="invalid_tenant")
+            _tenant_error("Tenant not found.", code="tenant_not_found")
+        if not _tenant_is_active(tenant):
+            _tenant_error("Tenant not found.", code="tenant_not_found")
         refresh_renewal(session, tenant)
         return tenant
 
 
 def get_validated_tenant(request: Request, body: object | None = None) -> str:
     """Resolve tenant from request metadata and enforce DB-backed tenant existence."""
-    tenant_id = _extract_tenant_key(request, body=body)
-    if not tenant_id:
-        logger.warning("[tenant] Missing tenant key")
-        _tenant_error("Missing tenant key (x-tenant-key header, body.tenant, or tenant query param).", code="missing_tenant_key")
-
-    # Persistent tenant store is the source of truth for quotas and existence.
-    _load_tenant_record(tenant_id)
-
+    tenant_id, _tenant = get_validated_tenant_record(request, body=body)
     return tenant_id
 
 
@@ -179,41 +170,75 @@ def get_validated_tenant_record(
             code="missing_tenant_key",
         )
     tenant = _load_tenant_record(tenant_id)
+    enforce_domain_allowlist(request, tenant, tenant_id)
     return tenant_id, tenant
 
 
-def enforce_domain_allowlist(request: Request, tenant: Tenant, tenant_key: str) -> None:
+def get_request_domain_info(request: Request) -> dict[str, str | None]:
     origin_raw = request.headers.get("origin") or ""
     referer_raw = request.headers.get("referer") or ""
     origin_domain = normalize_domain(origin_raw)
     referer_domain = normalize_domain(referer_raw)
-    domain = get_request_domain(request)
+    parsed_domain = origin_domain or referer_domain
+    normalized_domain = parsed_domain
+    return {
+        "origin": origin_raw or None,
+        "referer": referer_raw or None,
+        "parsed_domain": parsed_domain,
+        "normalized_domain": normalized_domain,
+    }
+
+
+def enforce_domain_allowlist(request: Request, tenant: Tenant, tenant_key: str) -> None:
+    domain_info = get_request_domain_info(request)
+    domain = domain_info["normalized_domain"]
     allowed = _get_allowed_domains(tenant)
     match = bool(domain and is_domain_allowed(domain, allowed))
-    logger.info(
-        "[tenant] domain check key=%s origin_domain=%s referer_domain=%s domain=%s allowed_count=%s allowed_preview=%s match=%s",
-        _redact_key(tenant_key),
-        origin_domain or "missing",
-        referer_domain or "missing",
-        domain or "missing",
-        len(allowed),
-        allowed[:2],
-        match,
-    )
     if not domain:
         if DEMO_MODE:
             logger.warning("[tenant] Missing origin/referer (demo allow) key=%s", _redact_key(tenant_key))
             return
+        logger.warning(
+            "[tenant] domain block endpoint=%s key=%s origin=%s referer=%s parsed_domain=%s normalized_domain=%s match=%s reason=missing_origin",
+            request.url.path,
+            _redact_key(tenant_key),
+            domain_info["origin"] or "missing",
+            domain_info["referer"] or "missing",
+            domain_info["parsed_domain"] or "missing",
+            domain_info["normalized_domain"] or "missing",
+            match,
+        )
         raise HTTPException(
             status_code=403,
-            detail={"error": "domain_required", "message": "Origin/Referer required"},
+            detail={"error": "missing_origin", "message": "Origin or Referer required"},
         )
 
     if not allowed or not match:
+        logger.warning(
+            "[tenant] domain block endpoint=%s key=%s origin=%s referer=%s parsed_domain=%s normalized_domain=%s match=%s reason=domain_not_allowed",
+            request.url.path,
+            _redact_key(tenant_key),
+            domain_info["origin"] or "missing",
+            domain_info["referer"] or "missing",
+            domain_info["parsed_domain"] or "missing",
+            domain_info["normalized_domain"] or "missing",
+            match,
+        )
         raise HTTPException(
             status_code=403,
-            detail={"error": "domain_not_allowed", "message": "Domain not allowed for this key"},
+            detail={
+                "error": "domain_not_allowed",
+                "message": "Domain not allowed for this tenant",
+                "parsed_domain": domain_info["parsed_domain"],
+                "normalized_domain": domain_info["normalized_domain"],
+                "allowed_domains": allowed,
+            },
         )
+
+
+def get_request_domain(request: Request) -> str | None:
+    domain_info = get_request_domain_info(request)
+    return domain_info["normalized_domain"]
 
 
 def get_tenant_limits(tenant_id: str) -> Dict[str, Any]:
@@ -279,7 +304,9 @@ def ensure_tenant_quota_ok(tenant_id: str, request: Request | None = None) -> di
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_id)
         if not tenant:
-            _tenant_error("Unknown tenant key.", code="invalid_tenant")
+            _tenant_error("Tenant not found.", code="tenant_not_found")
+        if not _tenant_is_active(tenant):
+            _tenant_error("Tenant not found.", code="tenant_not_found")
         refresh_renewal(session, tenant)
         quota = quota_for_plan(tenant.plan_tier)
         if tenant.used_seconds_month >= quota:
@@ -390,6 +417,7 @@ VOICE_ID = (os.getenv("VOICE_ID","").strip())
 MODEL_ID = (os.getenv("MODEL_ID","eleven_turbo_v2").strip())
 CACHE_DIR = CACHE_ROOT
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
+REQUIRE_DOMAIN_HEADER = os.getenv("REQUIRE_DOMAIN_HEADER", "false").lower() in ("1", "true", "yes")
 MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
@@ -429,7 +457,7 @@ print("[import] main.py loaded", flush=True)
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code in (401, 402) and isinstance(exc.detail, dict) and exc.detail.get("error"):
+    if exc.status_code in (401, 402, 403) and isinstance(exc.detail, dict) and exc.detail.get("error"):
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
     return await fastapi_http_exception_handler(request, exc)
 
@@ -886,7 +914,6 @@ def _append_analytics_event(
 @app.post("/metric")
 def metric(req: AnalyticsEvent, request: Request):
     tenant_id, tenant = get_validated_tenant_record(request, body=req)
-    enforce_domain_allowlist(request, tenant, tenant_id)
     ev = (req.event or "").strip().lower()
     if not tenant_id or ev not in ANALYTICS_EVENTS:
         return Response(status_code=204)
@@ -986,6 +1013,7 @@ class TenantCreateRequest(BaseModel):
     domains: list[str] | str | None = None
     contact_email: str | None = None
     status: str | None = None
+    tenant_key: str | None = None
 
 
 @app.post("/admin/tenants", response_model=None)
@@ -998,28 +1026,41 @@ def create_tenant_admin(
     if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    plan = (body.plan_tier or "trial").lower()
-    if plan not in TIER_QUOTAS_SECONDS:
+    tenant_key = (body.tenant_key or "").strip() or None
+    plan = (body.plan_tier or "").strip().lower()
+    if plan and plan not in TIER_QUOTAS_SECONDS:
         raise HTTPException(
             status_code=400,
             detail="plan_tier must be one of: trial, creator, publisher, newsroom",
         )
 
-    domains = normalize_domains(body.domains)
-    if not domains:
-        raise HTTPException(status_code=400, detail="domains is required (exact domain list)")
+    domains = normalize_domains(body.domains) if body.domains is not None else None
+    if not tenant_key:
+        plan = plan or "trial"
+        if not domains:
+            raise HTTPException(status_code=400, detail="domains is required (exact domain list)")
 
-    status = (body.status or "active").strip().lower()
+    status = (body.status or "").strip().lower() or None
 
     with tenant_session() as session:
-        tenant = create_tenant(
-            session,
-            plan,
-            allowed_domains=domains,
-            status=status,
-            contact_email=body.contact_email,
-        )
-        quota_seconds = quota_for_plan(plan)
+        if tenant_key:
+            tenant = upsert_tenant(
+                session,
+                tenant_key=tenant_key,
+                plan_tier=plan or None,
+                allowed_domains=domains,
+                status=status,
+                contact_email=body.contact_email,
+            )
+        else:
+            tenant = create_tenant(
+                session,
+                plan,
+                allowed_domains=domains,
+                status=status or "active",
+                contact_email=body.contact_email,
+            )
+        quota_seconds = quota_for_plan(tenant.plan_tier)
         public_base = _public_base_from_request(request)
         widget_src = _widget_src_url(public_base)
         embed_snippet = (
@@ -1035,7 +1076,7 @@ def create_tenant_admin(
             "quota_seconds_month": quota_seconds,
             "renewal_at": tenant.renewal_at,
             "created_at": tenant.created_at,
-            "allowed_domains": domains,
+            "allowed_domains": _get_allowed_domains(tenant),
             "embed_snippet": embed_snippet,
         }
 
@@ -1117,22 +1158,25 @@ def domain_debug(
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant not found")
 
-    origin_raw = request.headers.get("origin") or ""
-    referer_raw = request.headers.get("referer") or ""
-    origin_domain = normalize_domain(origin_raw)
-    referer_domain = normalize_domain(referer_raw)
-    request_domain = get_request_domain(request)
+    domain_info = get_request_domain_info(request)
     allowed = _get_allowed_domains(tenant)
-    match = bool(request_domain and is_domain_allowed(request_domain, allowed))
+    match = bool(domain_info["normalized_domain"] and is_domain_allowed(domain_info["normalized_domain"], allowed))
+    if not domain_info["normalized_domain"]:
+        reason = "demo_mode_allow" if DEMO_MODE else "missing_origin"
+    elif not allowed or not match:
+        reason = "domain_not_allowed"
+    else:
+        reason = "ok"
 
     return {
-        "origin": origin_raw or None,
-        "referer": referer_raw or None,
-        "origin_domain": origin_domain,
-        "referer_domain": referer_domain,
-        "request_domain": request_domain,
-        "allowed_domains_normalized": allowed,
+        "origin": domain_info["origin"],
+        "referer": domain_info["referer"],
+        "parsed_domain": domain_info["parsed_domain"],
+        "normalized_domain": domain_info["normalized_domain"],
+        "tenant_domains_raw": tenant.allowed_domains,
+        "tenant_domains_normalized": allowed,
         "match": match,
+        "reason": reason,
     }
 
 # --- simple API key guard (prod only)
@@ -1354,7 +1398,7 @@ def debug_config():
         "model_id": MODEL_ID,
         "tenant_auth_mode": "db_allowlist_exact_domains",
         "demo_mode": DEMO_MODE,
-        "require_domain_header": not DEMO_MODE,
+        "require_domain_header": REQUIRE_DOMAIN_HEADER,
         "tenants_db": tenants_db,
     }
 
@@ -2420,7 +2464,6 @@ class ArticleAudioRequest(BaseModel):
 @app.post("/api/article-audio")
 async def article_audio(req: ArticleAudioRequest, request: Request):
     tenant_id, tenant = get_validated_tenant_record(request, body=req)
-    enforce_domain_allowlist(request, tenant, tenant_id)
     tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
 
     raw_text = (req.text or "").strip()
