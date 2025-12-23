@@ -158,16 +158,25 @@ def serialize_domains(domains: list[str] | None) -> str | None:
 def deserialize_domains(value: str | None) -> list[str]:
     if not value:
         return []
+    items: list[str] = []
     try:
         data = json.loads(value)
         if isinstance(data, list):
-            return [str(x).strip() for x in data if str(x).strip()]
+            items = [str(x).strip() for x in data if str(x).strip()]
         if isinstance(data, str) and data.strip():
-            return [data.strip()]
+            items = [data.strip()]
     except Exception:
-        pass
-    parts = [p.strip() for p in value.split(",") if p.strip()]
-    return parts
+        raw = value.strip()
+        items = [raw] if raw else []
+    normalized = []
+    seen = set()
+    for item in items:
+        host = normalize_domain(item)
+        if not host or "*" in host or host in seen:
+            continue
+        seen.add(host)
+        normalized.append(host)
+    return normalized
 
 
 def normalize_domain(value: str | None) -> str | None:

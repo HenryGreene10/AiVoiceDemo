@@ -117,7 +117,7 @@ def is_domain_allowed(domain: str, allowed_domains: list[str]) -> bool:
 
 
 def _get_allowed_domains(tenant: Tenant) -> list[str]:
-    return normalize_domains(deserialize_domains(getattr(tenant, "allowed_domains", None)))
+    return deserialize_domains(getattr(tenant, "allowed_domains", None))
 
 
 def _tenant_error(message: str, code: str = "invalid_tenant") -> None:
@@ -162,7 +162,23 @@ def get_validated_tenant_record(
 
 
 def enforce_domain_allowlist(request: Request, tenant: Tenant, tenant_key: str) -> None:
+    origin_raw = request.headers.get("origin") or ""
+    referer_raw = request.headers.get("referer") or ""
+    origin_domain = normalize_domain(origin_raw)
+    referer_domain = normalize_domain(referer_raw)
     domain = get_request_domain(request)
+    allowed = _get_allowed_domains(tenant)
+    match = bool(domain and is_domain_allowed(domain, allowed))
+    logger.info(
+        "[tenant] domain check key=%s origin_domain=%s referer_domain=%s domain=%s allowed_count=%s allowed_preview=%s match=%s",
+        _redact_key(tenant_key),
+        origin_domain or "missing",
+        referer_domain or "missing",
+        domain or "missing",
+        len(allowed),
+        allowed[:2],
+        match,
+    )
     if not domain:
         if DEMO_MODE:
             logger.warning("[tenant] Missing origin/referer (demo allow) key=%s", _redact_key(tenant_key))
@@ -172,8 +188,7 @@ def enforce_domain_allowlist(request: Request, tenant: Tenant, tenant_key: str) 
             detail={"error": "domain_required", "message": "Origin/Referer required"},
         )
 
-    allowed = _get_allowed_domains(tenant)
-    if not allowed or not is_domain_allowed(domain, allowed):
+    if not allowed or not match:
         raise HTTPException(
             status_code=403,
             detail={"error": "domain_not_allowed", "message": "Domain not allowed for this key"},
