@@ -75,6 +75,7 @@ class Tenant(Base):
     used_seconds_month = Column(Integer, nullable=False, default=0)
     renewal_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     allowed_domains = Column(String, nullable=True)
     status = Column(String, nullable=True)
     contact_email = Column(String, nullable=True)
@@ -120,6 +121,7 @@ def _ensure_columns() -> None:
         "allowed_domains": "TEXT",
         "status": "TEXT",
         "contact_email": "TEXT",
+        "updated_at": "DATETIME",
         "stripe_customer_id": "TEXT",
         "stripe_subscription_id": "TEXT",
         "stripe_checkout_session_id": "TEXT",
@@ -280,6 +282,7 @@ def create_tenant(
         used_seconds_month=0,
         renewal_at=now + timedelta(days=30),
         created_at=now,
+        updated_at=now,
         allowed_domains=serialize_domains(normalized_domains),
         status=status,
         contact_email=contact_email,
@@ -316,6 +319,7 @@ def upsert_tenant(
             used_seconds_month=0,
             renewal_at=renewal_at or now + timedelta(days=30),
             created_at=created_at or now,
+            updated_at=now,
             allowed_domains=serialize_domains(normalized_domains),
             status=status or "active",
             contact_email=contact_email,
@@ -343,6 +347,7 @@ def upsert_tenant(
         tenant.quota_seconds_month = quota_seconds_month
     if allowed_domains is not None:
         tenant.allowed_domains = serialize_domains(normalized_domains)
+    tenant.updated_at = now
     if created_at and not tenant.created_at:
         tenant.created_at = created_at
     if renewal_at:

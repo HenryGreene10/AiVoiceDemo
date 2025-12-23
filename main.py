@@ -28,6 +28,7 @@ from threading import Lock
 from datetime import datetime, timezone, date, timedelta
 from mutagen.mp3 import MP3
 import stripe
+from sqlalchemy import or_
 from app.config.tenants import TENANTS, TENANT_USAGE
 from app.tenant_store import (
     DATABASE_URL,
@@ -1088,6 +1089,56 @@ def create_tenant_admin(
         }
 
     return response
+
+
+@app.get("/admin/tenants/list")
+def list_tenants_admin(
+    request: Request,
+    limit: int = Query(25, ge=1, le=100),
+    search: str | None = Query(None),
+    full: int = Query(0, ge=0, le=1),
+    x_admin_secret: str | None = Header(default=None),
+):
+    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    search_term = (search or "").strip().lower()
+    with tenant_session() as session:
+        query = session.query(Tenant)
+        if search_term:
+            like = f"%{search_term}%"
+            query = query.filter(
+                or_(
+                    Tenant.stripe_customer_id.ilike(like),
+                    Tenant.stripe_subscription_id.ilike(like),
+                    Tenant.contact_email.ilike(like),
+                    Tenant.allowed_domains.ilike(like),
+                )
+            )
+        tenants = query.order_by(Tenant.created_at.desc()).limit(limit).all()
+
+    results = []
+    for tenant in tenants:
+        allowed = _get_allowed_domains(tenant)
+        item = {
+            "tenant_key": tenant.tenant_key if full else _redact_key(tenant.tenant_key),
+            "status": tenant.status,
+            "plan_tier": tenant.plan_tier,
+            "quota_seconds_month": (
+                tenant.quota_seconds_month
+                if tenant.quota_seconds_month is not None
+                else quota_for_plan(tenant.plan_tier)
+            ),
+            "allowed_domains": allowed,
+            "stripe_customer_id": tenant.stripe_customer_id,
+            "stripe_subscription_id": tenant.stripe_subscription_id,
+            "stripe_checkout_session_id": tenant.stripe_checkout_session_id,
+            "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+            "updated_at": tenant.updated_at.isoformat() if getattr(tenant, "updated_at", None) else None,
+        }
+        results.append(item)
+
+    return {"tenants": results}
 
 
 @app.get("/admin/tenant")
@@ -2234,6 +2285,7 @@ async def stripe_webhook(request: Request):
         if not cust_email:
             logger.warning("stripe checkout.completed missing email for session=%s", session_id)
             return JSONResponse({"ok": True})
+        resend_email = request.query_params.get("resend_email", "").strip().lower() in ("1", "true", "yes")
         stripe_customer_id = full_session.get("customer")
         stripe_subscription_id = full_session.get("subscription")
         stripe_checkout_session_id = full_session.get("id")
@@ -2242,10 +2294,8 @@ async def stripe_webhook(request: Request):
         if not domain_raw:
             logger.warning("[stripe] checkout.completed missing domain session=%s", stripe_checkout_session_id)
         normalized_domains = _expand_allowed_domains(domain_raw)
-        pending_domain = not normalized_domains
         tier = _tier_from_payment_link(payment_link_id) or "unknown"
         pending_review = tier == "unknown"
-        status = "pending_review" if pending_review else ("pending_domain" if pending_domain else "active")
         quota_seconds_month = quota_for_plan(tier) if not pending_review else None
 
         with tenant_session() as session:
@@ -2253,16 +2303,39 @@ async def stripe_webhook(request: Request):
                 existing_by_session = get_tenant_by_stripe_checkout_session_id(session, stripe_checkout_session_id)
                 if existing_by_session:
                     logger.info("[stripe] checkout session already provisioned session=%s", stripe_checkout_session_id)
+                    if resend_email and existing_by_session.contact_email:
+                        existing_domains = _get_allowed_domains(existing_by_session)
+                        existing_pending_domain = not existing_domains
+                        existing_pending_review = (existing_by_session.plan_tier or "") == "unknown"
+                        emailed = await _send_resend_email(
+                            existing_by_session.contact_email,
+                            existing_by_session.tenant_key,
+                            existing_by_session.plan_tier or "unknown",
+                            domains=existing_domains,
+                            request=request,
+                            pending_domain=existing_pending_domain,
+                            pending_review=existing_pending_review,
+                        )
+                        logger.info(
+                            "[provision] resend tenant=%s session=%s emailed=%s",
+                            _redact_key(existing_by_session.tenant_key),
+                            stripe_checkout_session_id,
+                            emailed,
+                        )
                     return JSONResponse({"ok": True})
             tenant = None
-            if stripe_customer_id:
-                tenant = get_tenant_by_stripe_customer_id(session, stripe_customer_id)
             if not tenant and stripe_subscription_id:
                 tenant = get_tenant_by_stripe_subscription_id(session, stripe_subscription_id)
+            if not tenant and stripe_customer_id:
+                tenant = get_tenant_by_stripe_customer_id(session, stripe_customer_id)
 
             tenant_key = tenant.tenant_key if tenant else str(uuid.uuid4())
             existing_domains = _get_allowed_domains(tenant) if tenant else []
             merged_domains = normalize_domains(existing_domains + normalized_domains)
+            pending_domain = not merged_domains
+            status = "pending_review" if pending_review else ("pending_domain" if pending_domain else "active")
+            domains_added = bool(normalized_domains) and not existing_domains
+            email_onboarding = tenant is None or domains_added
 
             upsert_tenant(
                 session,
@@ -2276,15 +2349,17 @@ async def stripe_webhook(request: Request):
                 stripe_checkout_session_id=stripe_checkout_session_id,
                 quota_seconds_month=quota_seconds_month,
             )
-        emailed = await _send_resend_email(
-            cust_email,
-            tenant_key,
-            tier,
-            domains=merged_domains,
-            request=request,
-            pending_domain=pending_domain,
-            pending_review=pending_review,
-        )
+        emailed = False
+        if email_onboarding:
+            emailed = await _send_resend_email(
+                cust_email,
+                tenant_key,
+                tier,
+                domains=merged_domains,
+                request=request,
+                pending_domain=pending_domain,
+                pending_review=pending_review,
+            )
         logger.info(
             "[provision] tenant=%s plan=%s domain=%s session=%s emailed=%s",
             _redact_key(tenant_key),
