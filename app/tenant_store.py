@@ -166,8 +166,7 @@ def deserialize_domains(value: str | None) -> list[str]:
         if isinstance(data, str) and data.strip():
             items = [data.strip()]
     except Exception:
-        raw = value.strip()
-        items = [raw] if raw else []
+        items = [p.strip() for p in value.split(",") if p.strip()]
     normalized = []
     seen = set()
     for item in items:
