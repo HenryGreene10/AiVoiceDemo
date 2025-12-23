@@ -4,6 +4,7 @@ import io
 import math
 import os, hashlib, requests, time, httpx
 import secrets
+import uuid
 from pathlib import Path
 from collections import OrderedDict
 from dotenv import load_dotenv; 
@@ -34,6 +35,9 @@ from app.tenant_store import (
     create_tenant,
     deserialize_domains,
     get_tenant,
+    get_tenant_by_stripe_checkout_session_id,
+    get_tenant_by_stripe_customer_id,
+    get_tenant_by_stripe_subscription_id,
     init_db as init_tenant_db,
     list_tenants,
     normalize_domain,
@@ -308,7 +312,7 @@ def ensure_tenant_quota_ok(tenant_id: str, request: Request | None = None) -> di
         if not _tenant_is_active(tenant):
             _tenant_error("Tenant not found.", code="tenant_not_found")
         refresh_renewal(session, tenant)
-        quota = quota_for_plan(tenant.plan_tier)
+        quota = int(tenant.quota_seconds_month or 0) if tenant.quota_seconds_month else quota_for_plan(tenant.plan_tier)
         if tenant.used_seconds_month >= quota:
             payload = _quota_error_payload(tenant.plan_tier, quota, tenant.used_seconds_month)
             try:
@@ -434,6 +438,9 @@ PUBLIC_WIDGET_URL = os.getenv("PUBLIC_WIDGET_URL", "").strip()
 PRICE_CREATOR_ID = os.getenv("PRICE_CREATOR_ID", "").strip()
 PRICE_PUBLISHER_ID = os.getenv("PRICE_PUBLISHER_ID", "").strip()
 PRICE_NEWSROOM_ID = os.getenv("PRICE_NEWSROOM_ID", "").strip()
+PAYMENT_LINK_CREATOR_ID = os.getenv("PAYMENT_LINK_CREATOR_ID", "").strip()
+PAYMENT_LINK_PUBLISHER_ID = os.getenv("PAYMENT_LINK_PUBLISHER_ID", "").strip()
+PAYMENT_LINK_NEWSROOM_ID = os.getenv("PAYMENT_LINK_NEWSROOM_ID", "").strip()
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
@@ -1951,6 +1958,17 @@ def _widget_src_url(public_base: str) -> str:
         return f"{public_base}/static/tts-widget.v1.js"
     return "/static/tts-widget.v1.js"
 
+def _tier_from_payment_link(payment_link_id: str) -> str | None:
+    if not payment_link_id:
+        return None
+    if payment_link_id == PAYMENT_LINK_CREATOR_ID:
+        return "creator"
+    if payment_link_id == PAYMENT_LINK_PUBLISHER_ID:
+        return "publisher"
+    if payment_link_id == PAYMENT_LINK_NEWSROOM_ID:
+        return "newsroom"
+    return None
+
 def _tier_from_price(price_id: str) -> str | None:
     if not price_id:
         return None
@@ -1961,6 +1979,27 @@ def _tier_from_price(price_id: str) -> str | None:
     if price_id == PRICE_NEWSROOM_ID:
         return "newsroom"
     return None
+
+def _domain_from_custom_fields(custom_fields: list[dict] | None) -> str:
+    for field in custom_fields or []:
+        key = (field.get("key") or "").strip().lower()
+        if key != "websitedomain":
+            continue
+        text = field.get("text") or {}
+        value = text.get("value")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _expand_allowed_domains(domain_raw: str) -> list[str]:
+    normalized = normalize_domain(domain_raw)
+    if not normalized:
+        return []
+    domains = [normalized]
+    if not normalized.endswith(".ghost.io") and not normalized.startswith("www."):
+        domains.append(f"www.{normalized}")
+    return normalize_domains(domains)
 
 def _load_tenant_store() -> dict:
     if not TENANT_STORE.exists():
@@ -2052,31 +2091,50 @@ def _maybe_send_quota_email(tenant: Tenant, quota: int, request: Request | None 
         return False
 
 
-async def _send_resend_email(to_email: str, tenant_key: str, tier: str, request: Request | None = None) -> bool:
+async def _send_resend_email(
+    to_email: str,
+    tenant_key: str,
+    tier: str,
+    domains: list[str] | None = None,
+    request: Request | None = None,
+    pending_domain: bool = False,
+    pending_review: bool = False,
+) -> bool:
     if not RESEND_API_KEY or not EMAIL_FROM or not to_email:
         return False
-    public_base = _public_base_from_request(request)
-    widget_src = _widget_src_url(public_base)
-    plan_label = (tier or "trial").title()
-    calendly_url = "https://calendly.com/henry10greene/30min"
-    help_line = (
-        f'<p>If you need help installing, book a free installation:<br>'
-        f'<a href="{calendly_url}">{calendly_url}</a></p>'
-    )
+    public_base = _public_base_from_request(request) or "https://hgtts.onrender.com"
+    widget_src = PUBLIC_WIDGET_URL or f"{public_base}/static/tts-widget.v1.js?v=1"
+    plan_label = (tier or "unknown").title()
+    domains = domains or []
+    domains_label = ", ".join(domains) if domains else "None yet"
+    domain_line = f"<p>Registered domain(s): <strong>{escape(domains_label)}</strong></p>"
+    pending_domain_line = ""
+    if pending_domain:
+        pending_domain_line = (
+            "<p><strong>Action needed:</strong> We did not receive your site domain. "
+            "Reply to this email with the domain readers use to access your site.</p>"
+        )
+    pending_review_line = ""
+    if pending_review:
+        pending_review_line = (
+            "<p><strong>Note:</strong> We could not match your plan automatically. "
+            "Support will follow up shortly.</p>"
+        )
     snippet = f"""<script
   src="{widget_src}"
   data-ail-api-base="{public_base}"
-  data-ail-tenant="{tenant_key}">
+  data-ail-tenant="{tenant_key}"
+  defer>
 </script>"""
     html = (
         "<p>Welcome to EasyAudio.</p>"
         "<p>EasyAudio converts your articles to audio for your readers.</p>"
-        f"{help_line}"
         f"<p>Your plan: <strong>{escape(plan_label)}</strong></p>"
-        f"<p>Tenant key:</p><pre><code>{escape(tenant_key)}</code></pre>"
-        f"<p>Install snippet:</p><pre><code>{escape(snippet)}</code></pre>"
-        "<p>Paste this snippet right before the closing &lt;/body&gt; tag on the page where you want the Listen button to appear.</p>"
-        "<p>After checkout, you'll receive a unique key. (check spam)</p>"
+        f"{domain_line}"
+        f"{pending_review_line}"
+        f"{pending_domain_line}"
+        "<p>Install snippet (Ghost Admin -> Settings -> Code Injection -> Site Header):</p>"
+        f"<pre><code>{escape(snippet)}</code></pre>"
     )
     client: httpx.AsyncClient = app.state.http_client
     try:
@@ -2086,7 +2144,7 @@ async def _send_resend_email(to_email: str, tenant_key: str, tier: str, request:
             json={
                 "from": EMAIL_FROM,
                 "to": [to_email],
-                "subject": "Welcome to EasyAudio - your embed is ready",
+                "subject": "Your EasyAudio install snippet",
                 "html": html,
                 "tracking": {"clicks": False},
             },
@@ -2176,32 +2234,63 @@ async def stripe_webhook(request: Request):
         if not cust_email:
             logger.warning("stripe checkout.completed missing email for session=%s", session_id)
             return JSONResponse({"ok": True})
-        line_items = (full_session.get("line_items") or {}).get("data") or []
-        first = line_items[0] if line_items else {}
-        price = (first.get("price") or {}) if isinstance(first, dict) else {}
-        price_id = price.get("id")
-        interval = (price.get("recurring") or {}).get("interval")
-        logger.info(
-            "[stripe] checkout.session.completed email=%s price_id=%s interval=%s",
+        stripe_customer_id = full_session.get("customer")
+        stripe_subscription_id = full_session.get("subscription")
+        stripe_checkout_session_id = full_session.get("id")
+        payment_link_id = full_session.get("payment_link")
+        domain_raw = _domain_from_custom_fields(full_session.get("custom_fields"))
+        if not domain_raw:
+            logger.warning("[stripe] checkout.completed missing domain session=%s", stripe_checkout_session_id)
+        normalized_domains = _expand_allowed_domains(domain_raw)
+        pending_domain = not normalized_domains
+        tier = _tier_from_payment_link(payment_link_id) or "unknown"
+        pending_review = tier == "unknown"
+        status = "pending_review" if pending_review else ("pending_domain" if pending_domain else "active")
+        quota_seconds_month = quota_for_plan(tier) if not pending_review else None
+
+        with tenant_session() as session:
+            if stripe_checkout_session_id:
+                existing_by_session = get_tenant_by_stripe_checkout_session_id(session, stripe_checkout_session_id)
+                if existing_by_session:
+                    logger.info("[stripe] checkout session already provisioned session=%s", stripe_checkout_session_id)
+                    return JSONResponse({"ok": True})
+            tenant = None
+            if stripe_customer_id:
+                tenant = get_tenant_by_stripe_customer_id(session, stripe_customer_id)
+            if not tenant and stripe_subscription_id:
+                tenant = get_tenant_by_stripe_subscription_id(session, stripe_subscription_id)
+
+            tenant_key = tenant.tenant_key if tenant else str(uuid.uuid4())
+            existing_domains = _get_allowed_domains(tenant) if tenant else []
+            merged_domains = normalize_domains(existing_domains + normalized_domains)
+
+            upsert_tenant(
+                session,
+                tenant_key=tenant_key,
+                plan_tier=tier,
+                allowed_domains=merged_domains if (merged_domains or not tenant) else None,
+                status=status,
+                contact_email=cust_email,
+                stripe_customer_id=stripe_customer_id,
+                stripe_subscription_id=stripe_subscription_id,
+                stripe_checkout_session_id=stripe_checkout_session_id,
+                quota_seconds_month=quota_seconds_month,
+            )
+        emailed = await _send_resend_email(
             cust_email,
-            price_id,
-            interval,
-        )
-        tier = _tier_from_price(price_id)
-        if not tier:
-            logger.error("stripe webhook unknown price_id=%s", price_id)
-            return JSONResponse({"ok": True})
-        tenant_key, _created = _ensure_tenant_for_email(
-            cust_email,
-            tier,
-            stripe_customer_id=full_session.get("customer"),
-        )
-        emailed = await _send_resend_email(cust_email, tenant_key, tier, request=request)
-        logger.info(
-            "[provision] email=%s tier=%s tenant_key=%s emailed=%s",
-            cust_email,
-            tier,
             tenant_key,
+            tier,
+            domains=merged_domains,
+            request=request,
+            pending_domain=pending_domain,
+            pending_review=pending_review,
+        )
+        logger.info(
+            "[provision] tenant=%s plan=%s domain=%s session=%s emailed=%s",
+            _redact_key(tenant_key),
+            tier,
+            (normalized_domains[0] if normalized_domains else "missing"),
+            stripe_checkout_session_id,
             emailed,
         )
     return JSONResponse({"ok": True})

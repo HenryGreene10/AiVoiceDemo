@@ -78,6 +78,10 @@ class Tenant(Base):
     allowed_domains = Column(String, nullable=True)
     status = Column(String, nullable=True)
     contact_email = Column(String, nullable=True)
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    stripe_checkout_session_id = Column(String, nullable=True)
+    quota_seconds_month = Column(Integer, nullable=True)
 
     @property
     def public_site_key(self) -> str:
@@ -116,6 +120,10 @@ def _ensure_columns() -> None:
         "allowed_domains": "TEXT",
         "status": "TEXT",
         "contact_email": "TEXT",
+        "stripe_customer_id": "TEXT",
+        "stripe_subscription_id": "TEXT",
+        "stripe_checkout_session_id": "TEXT",
+        "quota_seconds_month": "INTEGER",
     }
     to_add = {name: sql_type for name, sql_type in missing.items() if name not in existing}
     if not to_add:
@@ -145,6 +153,24 @@ def get_tenant(session: Session, tenant_key: str) -> Optional[Tenant]:
     if not tenant_key:
         return None
     return session.get(Tenant, tenant_key)
+
+
+def get_tenant_by_stripe_customer_id(session: Session, stripe_customer_id: str) -> Optional[Tenant]:
+    if not stripe_customer_id:
+        return None
+    return session.query(Tenant).filter(Tenant.stripe_customer_id == stripe_customer_id).first()
+
+
+def get_tenant_by_stripe_subscription_id(session: Session, stripe_subscription_id: str) -> Optional[Tenant]:
+    if not stripe_subscription_id:
+        return None
+    return session.query(Tenant).filter(Tenant.stripe_subscription_id == stripe_subscription_id).first()
+
+
+def get_tenant_by_stripe_checkout_session_id(session: Session, stripe_checkout_session_id: str) -> Optional[Tenant]:
+    if not stripe_checkout_session_id:
+        return None
+    return session.query(Tenant).filter(Tenant.stripe_checkout_session_id == stripe_checkout_session_id).first()
 
 
 def refresh_renewal(session: Session, tenant: Tenant, now: Optional[datetime] = None) -> None:
@@ -239,6 +265,10 @@ def create_tenant(
     allowed_domains: list[str] | None = None,
     status: str | None = "active",
     contact_email: str | None = None,
+    stripe_customer_id: str | None = None,
+    stripe_subscription_id: str | None = None,
+    stripe_checkout_session_id: str | None = None,
+    quota_seconds_month: int | None = None,
 ) -> Tenant:
     plan = (plan_tier or "trial").lower()
     now = _utcnow()
@@ -253,6 +283,10 @@ def create_tenant(
         allowed_domains=serialize_domains(normalized_domains),
         status=status,
         contact_email=contact_email,
+        stripe_customer_id=stripe_customer_id,
+        stripe_subscription_id=stripe_subscription_id,
+        stripe_checkout_session_id=stripe_checkout_session_id,
+        quota_seconds_month=quota_seconds_month,
     )
     session.add(tenant)
     return tenant
@@ -265,6 +299,10 @@ def upsert_tenant(
     allowed_domains: list[str] | str | None = None,
     status: str | None = None,
     contact_email: str | None = None,
+    stripe_customer_id: str | None = None,
+    stripe_subscription_id: str | None = None,
+    stripe_checkout_session_id: str | None = None,
+    quota_seconds_month: int | None = None,
     created_at: datetime | None = None,
     renewal_at: datetime | None = None,
 ) -> Tenant:
@@ -281,6 +319,10 @@ def upsert_tenant(
             allowed_domains=serialize_domains(normalized_domains),
             status=status or "active",
             contact_email=contact_email,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            stripe_checkout_session_id=stripe_checkout_session_id,
+            quota_seconds_month=quota_seconds_month,
         )
         session.add(tenant)
         return tenant
@@ -291,6 +333,14 @@ def upsert_tenant(
         tenant.status = status
     if contact_email:
         tenant.contact_email = contact_email
+    if stripe_customer_id:
+        tenant.stripe_customer_id = stripe_customer_id
+    if stripe_subscription_id:
+        tenant.stripe_subscription_id = stripe_subscription_id
+    if stripe_checkout_session_id:
+        tenant.stripe_checkout_session_id = stripe_checkout_session_id
+    if quota_seconds_month is not None:
+        tenant.quota_seconds_month = quota_seconds_month
     if allowed_domains is not None:
         tenant.allowed_domains = serialize_domains(normalized_domains)
     if created_at and not tenant.created_at:

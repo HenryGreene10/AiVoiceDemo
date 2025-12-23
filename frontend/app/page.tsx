@@ -194,9 +194,10 @@ export default function Page() {
                         marginTop: 8,
                       }}
                     >{`<script
-      data-ail-api-base="https://hgtts.onrender.com"
-      data-ail-tenant="________"
-      src="https://hgtts.onrender.com/static/tts-widget.v1.js">
+  src="https://hgtts.onrender.com/static/tts-widget.v1.js?v=1"
+  data-ail-api-base="https://hgtts.onrender.com"
+  data-ail-tenant="PASTE_TENANT_KEY_HERE"
+  defer>
 </script>`}</pre>
                   </details>
                 </li>
