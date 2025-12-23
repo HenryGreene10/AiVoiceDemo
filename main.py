@@ -29,9 +29,12 @@ from mutagen.mp3 import MP3
 import stripe
 from app.config.tenants import TENANTS, TENANT_USAGE
 from app.tenant_store import (
+    DATABASE_URL,
+    DB_PATH,
     Tenant,
     create_tenant,
     deserialize_domains,
+    get_tenant_db_info,
     get_tenant,
     init_db as init_tenant_db,
     list_tenants,
@@ -42,6 +45,7 @@ from app.tenant_store import (
     refresh_renewal,
     tenant_session,
     TIER_QUOTAS_SECONDS,
+    upsert_tenant,
 )
 from fastapi.exception_handlers import http_exception_handler as fastapi_http_exception_handler
 
@@ -684,6 +688,13 @@ async def _startup():
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
     app.state.locks = {}
     init_tenant_db()
+    db_info = get_tenant_db_info()
+    logger.info(
+        "[boot] CACHE_ROOT=%s TENANT_DB=%s exists=%s",
+        CACHE_ROOT,
+        db_info.get("target"),
+        db_info.get("exists"),
+    )
     
 from fastapi.routing import APIRoute
 
@@ -1000,6 +1011,100 @@ def create_tenant_admin(
         }
 
     return response
+
+
+@app.get("/admin/tenant")
+def tenant_admin(
+    request: Request,
+    tenant_key: str = Query(...),
+    x_admin_secret: str | None = Header(default=None),
+):
+    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    with tenant_session() as session:
+        tenant = get_tenant(session, tenant_key)
+
+    if not tenant:
+        return {"found": False}
+
+    return {
+        "found": True,
+        "tenant_key_redacted": _redact_key(tenant_key),
+        "allowed_domains_raw": tenant.allowed_domains,
+        "allowed_domains_normalized": _get_allowed_domains(tenant),
+        "plan_tier": tenant.plan_tier,
+        "status": tenant.status,
+        "renewal_at": tenant.renewal_at.isoformat() if tenant.renewal_at else None,
+        "used_seconds_month": tenant.used_seconds_month,
+    }
+
+
+@app.get("/admin/tenant-debug")
+def tenant_debug(
+    request: Request,
+    tenant_key: str = Query(...),
+    x_admin_secret: str | None = Header(default=None),
+):
+    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    with tenant_session() as session:
+        tenant = get_tenant(session, tenant_key)
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+
+    origin_raw = request.headers.get("origin") or ""
+    referer_raw = request.headers.get("referer") or ""
+    origin_domain = normalize_domain(origin_raw)
+    referer_domain = normalize_domain(referer_raw)
+    resolved_domain = get_request_domain(request)
+    allowed = _get_allowed_domains(tenant)
+    match = bool(resolved_domain and is_domain_allowed(resolved_domain, allowed))
+
+    return {
+        "origin_domain": origin_domain,
+        "referer_domain": referer_domain,
+        "resolved_domain": resolved_domain,
+        "allowed_domains": allowed,
+        "allowed_count": len(allowed),
+        "match": match,
+        "status": tenant.status,
+        "plan_tier": tenant.plan_tier,
+    }
+
+
+@app.get("/admin/domain-debug")
+def domain_debug(
+    request: Request,
+    tenant_key: str = Query(...),
+    x_admin_secret: str | None = Header(default=None),
+):
+    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    with tenant_session() as session:
+        tenant = get_tenant(session, tenant_key)
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+
+    origin_raw = request.headers.get("origin") or ""
+    referer_raw = request.headers.get("referer") or ""
+    origin_domain = normalize_domain(origin_raw)
+    referer_domain = normalize_domain(referer_raw)
+    request_domain = get_request_domain(request)
+    allowed = _get_allowed_domains(tenant)
+    match = bool(request_domain and is_domain_allowed(request_domain, allowed))
+
+    return {
+        "origin": origin_raw or None,
+        "referer": referer_raw or None,
+        "origin_domain": origin_domain,
+        "referer_domain": referer_domain,
+        "request_domain": request_domain,
+        "allowed_domains_normalized": allowed,
+        "match": match,
+    }
 
 # --- simple API key guard (prod only)
 ALLOWED_KEYS = set([k.strip() for k in os.getenv("ALLOWED_KEYS", "").split(",") if k.strip()])
@@ -1925,7 +2030,24 @@ def _ensure_tenant_for_email(email: str, tier: str, stripe_customer_id: str | No
     email_key = (email or "").strip().lower()
     store = _load_tenant_store()
     if email_key in store and store[email_key].get("tenant_key"):
-        return store[email_key]["tenant_key"], False
+        tenant_key = store[email_key]["tenant_key"]
+        created_at_raw = store[email_key].get("created_at")
+        created_at = None
+        if isinstance(created_at_raw, str):
+            try:
+                created_at = datetime.fromisoformat(created_at_raw)
+            except Exception:
+                created_at = None
+        with tenant_session() as session:
+            upsert_tenant(
+                session,
+                tenant_key=tenant_key,
+                plan_tier=tier,
+                contact_email=email,
+                status="active",
+                created_at=created_at,
+            )
+        return tenant_key, False
     tenant_key = f"tnt_{secrets.token_urlsafe(12)}"
     store[email_key] = {
         "tenant_key": tenant_key,
@@ -1937,6 +2059,14 @@ def _ensure_tenant_for_email(email: str, tier: str, stripe_customer_id: str | No
         _save_tenant_store(store)
     except Exception as e:
         logger.warning("tenant store write failed: %s", e)
+    with tenant_session() as session:
+        upsert_tenant(
+            session,
+            tenant_key=tenant_key,
+            plan_tier=tier,
+            contact_email=email,
+            status="active",
+        )
     return tenant_key, True
 
 

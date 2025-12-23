@@ -49,6 +49,24 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+def get_tenant_db_info() -> dict:
+    if DATABASE_URL:
+        url = engine.url
+        driver = url.drivername or "database"
+        host = url.host or ""
+        name = url.database or ""
+        if host or name:
+            target = f"{driver}://{host}/{name}".rstrip("/")
+        else:
+            target = driver
+        return {"target": target, "sqlite_path": None, "exists": None}
+    return {
+        "target": f"sqlite:///{DB_PATH}",
+        "sqlite_path": str(DB_PATH),
+        "exists": DB_PATH.exists(),
+    }
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -225,17 +243,60 @@ def create_tenant(
     plan = (plan_tier or "trial").lower()
     now = _utcnow()
     tenant_key = public_site_key or _generate_public_site_key()
+    normalized_domains = normalize_domains(allowed_domains)
     tenant = Tenant(
         tenant_key=tenant_key,
         plan_tier=plan,
         used_seconds_month=0,
         renewal_at=now + timedelta(days=30),
         created_at=now,
-        allowed_domains=serialize_domains(allowed_domains),
+        allowed_domains=serialize_domains(normalized_domains),
         status=status,
         contact_email=contact_email,
     )
     session.add(tenant)
+    return tenant
+
+
+def upsert_tenant(
+    session: Session,
+    tenant_key: str,
+    plan_tier: str | None = None,
+    allowed_domains: list[str] | str | None = None,
+    status: str | None = None,
+    contact_email: str | None = None,
+    created_at: datetime | None = None,
+    renewal_at: datetime | None = None,
+) -> Tenant:
+    tenant = session.get(Tenant, tenant_key)
+    now = _utcnow()
+    normalized_domains = normalize_domains(allowed_domains)
+    if tenant is None:
+        tenant = Tenant(
+            tenant_key=tenant_key,
+            plan_tier=(plan_tier or "trial").lower(),
+            used_seconds_month=0,
+            renewal_at=renewal_at or now + timedelta(days=30),
+            created_at=created_at or now,
+            allowed_domains=serialize_domains(normalized_domains),
+            status=status or "active",
+            contact_email=contact_email,
+        )
+        session.add(tenant)
+        return tenant
+
+    if plan_tier:
+        tenant.plan_tier = (plan_tier or tenant.plan_tier or "trial").lower()
+    if status is not None:
+        tenant.status = status
+    if contact_email:
+        tenant.contact_email = contact_email
+    if allowed_domains is not None:
+        tenant.allowed_domains = serialize_domains(normalized_domains)
+    if created_at and not tenant.created_at:
+        tenant.created_at = created_at
+    if renewal_at:
+        tenant.renewal_at = renewal_at
     return tenant
 
 
