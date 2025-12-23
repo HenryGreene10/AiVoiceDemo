@@ -30,11 +30,9 @@ import stripe
 from app.config.tenants import TENANTS, TENANT_USAGE
 from app.tenant_store import (
     DATABASE_URL,
-    DB_PATH,
     Tenant,
     create_tenant,
     deserialize_domains,
-    get_tenant_db_info,
     get_tenant,
     init_db as init_tenant_db,
     list_tenants,
@@ -67,6 +65,25 @@ def _redact_key(value: str | None) -> str:
     if len(raw) <= 10:
         return f"{raw[:2]}...{raw[-2:]}"
     return f"{raw[:6]}...{raw[-4:]}"
+
+
+def _redact_db_url(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = urlparse(value)
+    except Exception:
+        return value
+    if not parsed.scheme:
+        return value
+    if not (parsed.username or parsed.password):
+        return value
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    user = parsed.username or ""
+    auth = f"{user}:****@" if user else "****@"
+    netloc = f"{auth}{host}{port}"
+    return parsed._replace(netloc=netloc).geturl()
 
 
 def _tenant_from_body(body: object) -> str | None:
@@ -688,12 +705,34 @@ async def _startup():
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
     app.state.locks = {}
     init_tenant_db()
-    db_info = get_tenant_db_info()
-    logger.info(
-        "[boot] CACHE_ROOT=%s TENANT_DB=%s exists=%s",
-        CACHE_ROOT,
-        db_info.get("target"),
-        db_info.get("exists"),
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    if db_url:
+        db_target = _redact_db_url(db_url)
+        db_exists = "skipped"
+    else:
+        db_path = Path(os.getenv("TENANT_DB_PATH", "/cache/tenants.db"))
+        db_target = f"sqlite:///{db_path}"
+        db_exists = db_path.exists()
+    cache_dir_exists = CACHE_ROOT.exists()
+    cache_writable = False
+    test_path = CACHE_ROOT / ".write_test"
+    try:
+        test_path.write_text("ok", encoding="utf-8")
+        test_path.unlink(missing_ok=True)
+        cache_writable = True
+    except Exception:
+        cache_writable = False
+    print(
+        "[boot] CACHE_ROOT=%s TENANT_DB=%s db_exists=%s cache_dir_exists=%s cache_writable=%s cwd=%s"
+        % (
+            CACHE_ROOT,
+            db_target,
+            db_exists,
+            cache_dir_exists,
+            cache_writable,
+            os.getcwd(),
+        ),
+        flush=True,
     )
     
 from fastapi.routing import APIRoute
