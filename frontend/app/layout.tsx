@@ -20,6 +20,7 @@ export default function RootLayout({
         {children}
         {/* Canonical demo embed lives here; backend static demo is deprecated. */}
         <Script
+          id="easyaudio-widget"
           src="https://hgtts.onrender.com/static/tts-widget.v1.js"
           strategy="afterInteractive"
           data-ail-api-base="https://hgtts.onrender.com"
