@@ -26,20 +26,57 @@
 
   const $ = (s, r = document) => r.querySelector(s);
 
-  function findScriptEl() {
-    return (
-      document.currentScript ||
-      document.querySelector('script[data-ail-tenant]') ||
-      document.querySelector('script[src*="tts-widget"]')
+  let configWarned = false;
+  function warnMissingConfig() {
+    if (configWarned) return;
+    configWarned = true;
+    console.warn(
+      "[AIL] Missing data-ail-tenant or data-ail-api-base; widget not initialized."
     );
   }
 
-  const scriptEl = findScriptEl();
+  function hasScriptDataset(el) {
+    if (!el || !el.dataset) return false;
+    return !!(el.dataset.ailTenant || el.dataset.ailApiBase);
+  }
+
+  function findScriptEl() {
+    let source = "currentScript";
+    let el = document.currentScript;
+    if (!hasScriptDataset(el)) {
+      el = document.getElementById("easyaudio-widget");
+      source = el ? "id" : "none";
+    }
+    if (!hasScriptDataset(el)) {
+      el = document.querySelector(
+        'script[src*="tts-widget.v1.js"][data-ail-tenant]'
+      );
+      source = el ? "query" : "none";
+    }
+    return { el, source };
+  }
+
+  const { el: scriptEl, source: scriptSource } = findScriptEl();
   const scriptData = (scriptEl && scriptEl.dataset) || {};
-  const apiBase = scriptData.ailApiBase || window.location.origin;
-  const tenant = scriptData.ailTenant || "default";
+  const apiBase = (scriptData.ailApiBase || "").trim();
+  const tenant = (scriptData.ailTenant || "").trim();
+  if (!apiBase || !tenant) {
+    warnMissingConfig();
+    return;
+  }
   const scriptHasTenant = !!scriptData.ailTenant;
   const AIL_CONFIG = { apiBase, tenant };
+  try {
+    if (window.localStorage && window.localStorage.getItem("EA_DEBUG") === "1") {
+      console.log("[AIL] debug config", {
+        tenant,
+        apiBase,
+        scriptSource,
+      });
+    }
+  } catch (e) {
+    // Ignore localStorage errors.
+  }
 
   // --- meta helpers ---
   function pickMeta(arr) {
