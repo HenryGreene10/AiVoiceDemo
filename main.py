@@ -425,6 +425,7 @@ VOICE_TENANTS: dict[str, TenantConfig] = {
 
 # --- app
 app = FastAPI()
+print("[import] main.py loaded", flush=True)
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
@@ -705,33 +706,9 @@ async def _startup():
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
     app.state.locks = {}
     init_tenant_db()
-    db_url = os.getenv("DATABASE_URL", "").strip()
-    if db_url:
-        db_target = _redact_db_url(db_url)
-        db_exists = "skipped"
-    else:
-        db_path = Path(os.getenv("TENANT_DB_PATH", "/cache/tenants.db"))
-        db_target = f"sqlite:///{db_path}"
-        db_exists = db_path.exists()
-    cache_dir_exists = CACHE_ROOT.exists()
-    cache_writable = False
-    test_path = CACHE_ROOT / ".write_test"
-    try:
-        test_path.write_text("ok", encoding="utf-8")
-        test_path.unlink(missing_ok=True)
-        cache_writable = True
-    except Exception:
-        cache_writable = False
     print(
-        "[boot] CACHE_ROOT=%s TENANT_DB=%s db_exists=%s cache_dir_exists=%s cache_writable=%s cwd=%s"
-        % (
-            CACHE_ROOT,
-            db_target,
-            db_exists,
-            cache_dir_exists,
-            cache_writable,
-            os.getcwd(),
-        ),
+        f"[boot] CACHE_ROOT={CACHE_ROOT} TENANT_DB_PATH={os.getenv('TENANT_DB_PATH','')} "
+        f"DATABASE_URL_SET={bool(os.getenv('DATABASE_URL','').strip())} cwd={os.getcwd()}",
         flush=True,
     )
     
