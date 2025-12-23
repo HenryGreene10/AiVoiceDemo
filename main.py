@@ -706,9 +706,22 @@ async def _startup():
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
     app.state.locks = {}
     init_tenant_db()
+    db_path = Path(os.getenv("TENANT_DB_PATH", "/cache/tenants.db"))
+    db_exists = db_path.exists()
+    cache_dir_exists = CACHE_ROOT.exists()
+    cache_writable = False
+    test_path = CACHE_ROOT / ".write_test"
+    try:
+        test_path.write_text("ok", encoding="utf-8")
+        test_path.unlink(missing_ok=True)
+        cache_writable = True
+    except Exception:
+        cache_writable = False
     print(
         f"[boot] CACHE_ROOT={CACHE_ROOT} TENANT_DB_PATH={os.getenv('TENANT_DB_PATH','')} "
-        f"DATABASE_URL_SET={bool(os.getenv('DATABASE_URL','').strip())} cwd={os.getcwd()}",
+        f"DATABASE_URL_SET={bool(os.getenv('DATABASE_URL','').strip())} cwd={os.getcwd()} "
+        f"tenant_db_path={db_path} db_exists={db_exists} cache_dir_exists={cache_dir_exists} "
+        f"cache_writable={cache_writable}",
         flush=True,
     )
     
