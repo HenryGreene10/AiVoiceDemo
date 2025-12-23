@@ -18,11 +18,12 @@ export default function RootLayout({
       </head>
       <body className="ea-body">
         {children}
+        {/* Canonical demo embed lives here; backend static demo is deprecated. */}
         <Script
           src="https://hgtts.onrender.com/static/tts-widget.v1.js"
           strategy="afterInteractive"
           data-ail-api-base="https://hgtts.onrender.com"
-          data-ail-tenant="27929280-aff3-4827-bb5f-4bf5cae35128"
+          data-ail-tenant="tnt_internal_demo"
         />
       </body>
     </html>
