@@ -6,7 +6,13 @@
   "use strict";
   const body = document.body;
   if (!body || !body.classList) return;
-  if (!body.classList.contains("post-template")) return;
+  const isPostTemplate = body.classList.contains("post-template");
+  const landingDemoSelector = '[data-ail-listen="true"]';
+  const landingDemoFallbackSelector = "#ail-listen-btn";
+  const hasLandingDemoListen =
+    !!document.querySelector(landingDemoSelector) ||
+    !!document.querySelector(landingDemoFallbackSelector);
+  if (!isPostTemplate && !hasLandingDemoListen) return;
   if ((body.className || "").includes("tag-no-audio")) return;
 
   console.log("[AIL] widget v108 LIVE", new Date().toISOString());
@@ -767,6 +773,24 @@ function findArticleRoot() {
         });
       }
 
+      function bindLandingDemoListenButton() {
+        const btn =
+          document.querySelector(landingDemoSelector) ||
+          document.querySelector(landingDemoFallbackSelector);
+        if (!btn) {
+          if (!isPostTemplate) {
+            console.warn("[EA] landing demo listen button not found");
+          }
+          return;
+        }
+        if (btn.dataset && btn.dataset.eaBound === "1") return;
+        if (!btn.__ailBound) {
+          attachListenHandler(btn);
+        }
+        if (btn.dataset) btn.dataset.eaBound = "1";
+        console.log("[EA] bound landing demo listen button");
+      }
+
       function initListenButton(opts = {}) {
         const fromObserver = !!(opts && opts.fromObserver);
         // 1) If a .ail-listen already exists, just wire it up.
@@ -885,6 +909,7 @@ function findArticleRoot() {
       }
 
       initListenButton();
+      bindLandingDemoListenButton();
       setupArticleMutationObserver();
     }
   };
