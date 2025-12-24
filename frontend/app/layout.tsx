@@ -25,6 +25,7 @@ export default function RootLayout({
           strategy="afterInteractive"
           data-ail-api-base="https://hgtts.onrender.com"
           data-ail-tenant="tnt_internal_demo"
+          data-ail-anchor="body"
         />
       </body>
     </html>
