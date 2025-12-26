@@ -33,6 +33,11 @@ export default function Page() {
         <section className="ea-hero">
           <div className="ea-card ea-hero-card">
             <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listening Experience</h1>
+            <div className="ea-hero-cta-row">
+              <a href="#install" className="ea-plan-cta ea-hero-cta">
+                Install with Ghost
+              </a>
+            </div>
           </div>
         </section>
 
@@ -154,82 +159,35 @@ export default function Page() {
         </section>
 
         {/* INSTALL */}
-        <section id="install" className="ea-section">
+        <section id="install" className="ea-section ea-install-section">
           <div className="ea-section-header">
-            <h2 className="ea-section-title">Install EasyAudio in 30 Seconds</h2>
+            <h2 className="ea-section-title">Install with Ghost</h2>
             <p className="ea-section-subtitle">
-              EasyAudio is designed to be installed by anyone.
+              Add EasyAudio to Ghost in minutes with a simple copy-paste.
             </p>
           </div>
 
-          <div className="ea-install-card" style={{ textAlign: "left" }}>
-            <div>
-              <h3 className="ea-section-subtitle" style={{ fontSize: 20, fontWeight: 600 }}>
-                How installation works
-              </h3>
-              <ol style={{ marginTop: 12, paddingLeft: 20 }}>
-                <li style={{ marginBottom: 10 }}>
-                  <p>After checkout, you&apos;ll receive a unique key.</p>
-                </li>
-
-                <li style={{ marginBottom: 10 }}>
-                  <p>
-                    Installation is one copy-paste. Open your site’s backend and paste this script
-                    before the closing <code>&lt;/body&gt;</code> tag:
-                  </p>
-                  <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: "pointer", fontWeight: 500 }}>
-                      Show script snippet
-                    </summary>
-                    <pre
-                      style={{
-                        overflowX: "auto",
-                        padding: "10px 12px",
-                        background: "#1a1c1a",
-                        color: "#f3dfc1",
-                        border: "2px solid #e0c9a6",
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        boxShadow: "0 8px 18px rgba(0,0,0,0.25)",
-                        marginTop: 8,
-                      }}
-                    >{`<script
-  src="https://hgtts.onrender.com/static/tts-widget.v1.js?v=1"
-  data-ail-api-base="https://hgtts.onrender.com"
-  data-ail-tenant="PASTE_TENANT_KEY_HERE"
-  defer>
-</script>`}</pre>
-                  </details>
-                </li>
-
-                <li>
-                  <p>
-                    Then, publish or deploy your site and you instantly have a Listen button on every
-                    article page. Enjoy!
-                  </p>
-                </li>
-              </ol>
-            </div>
-
-            <div style={{ marginTop: 32 }}>
-              <h3 className="ea-section-subtitle" style={{ fontSize: 20, fontWeight: 600 }}>
-                Too complicated? We&apos;ll install it with you.
-              </h3>
-              <p>
-                If you don&apos;t manage your site template yourself, you still have two easy options:
-              </p>
-              <ul style={{ margin: "12px 0 0 18px" }}>
-                <li>Forward our install email to your developer, or</li>
-                <li>Book a free 10-minute installation call and we&apos;ll do it together on Zoom.</li>
-              </ul>
-              <a
-                href="https://calendly.com/henry10greene/30min"
-                className="ea-plan-cta"
-                style={{ display: "inline-block", marginTop: 16 }}
-              >
-                Get free installation help
-              </a>
-            </div>
+          <div className="ea-install-card">
+            <ol className="ea-install-steps">
+              <li>
+                <strong>Checkout and get your snippet.</strong> We email your EasyAudio key right away.
+              </li>
+              <li>
+                <strong>Paste it into Ghost.</strong> In Ghost Admin, go to Settings &gt; Code Injection
+                and paste the snippet.
+              </li>
+              <li>
+                <strong>Publish and listen.</strong> Refresh any post and the Listen button appears
+                automatically.
+              </li>
+            </ol>
+            <a href="#pricing" className="ea-plan-cta ea-install-cta">
+              Install with Ghost
+            </a>
+            <p className="ea-install-note">
+              <strong>Other platforms:</strong> WordPress, Webflow, and custom sites use a similar
+              one-snippet install. If you need help, we&apos;ll guide you.
+            </p>
           </div>
         </section>
 
