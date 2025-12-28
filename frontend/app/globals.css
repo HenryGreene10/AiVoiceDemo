@@ -388,25 +388,26 @@
 .ea-install-media {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
   margin: 16px 0 8px;
 }
 
-.ea-install-shot-label {
+.ea-shot-label {
   margin-bottom: 6px;
   font-size: 12px;
   opacity: 0.75;
 }
 
-.ea-install-shot-frame {
+.ea-shot-frame {
+  width: 100%;
   aspect-ratio: 4 / 3;
   border: 1px solid var(--ea-border);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   background-color: #fffdf8;
 }
 
-.ea-install-shot-frame img {
+.ea-shot-frame img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -629,12 +630,14 @@
   .ea-install-steps {
     padding-left: 18px;
   }
+}
 
+@media (max-width: 768px) {
   .ea-install-media {
     grid-template-columns: 1fr;
   }
 
-  .ea-install-shot-frame {
+  .ea-shot-frame {
     aspect-ratio: 16 / 10;
   }
 }
