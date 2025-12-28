@@ -182,18 +182,33 @@ export default function Page() {
               </li>
             </ol>
             <div className="ea-install-media">
-              <img
-                src="/install/ghost-step-1-code-injection.png"
-                alt="Ghost Admin code injection screen"
-              />
-              <img
-                src="/install/ghost-step-2-paste-snippet.png"
-                alt="Paste the EasyAudio snippet in Ghost"
-              />
-              <img
-                src="/install/ghost-step-3-listen-button.png"
-                alt="Listen button visible on a Ghost post"
-              />
+              <div className="ea-install-shot">
+                <div className="ea-install-shot-label">1 Open Code Injection</div>
+                <div className="ea-install-shot-frame">
+                  <img
+                    src="/install/ghost-step-1-code-injection.png"
+                    alt="Ghost Admin code injection screen"
+                  />
+                </div>
+              </div>
+              <div className="ea-install-shot">
+                <div className="ea-install-shot-label">2 Paste the snippet</div>
+                <div className="ea-install-shot-frame">
+                  <img
+                    src="/install/ghost-step-2-paste-snippet.png"
+                    alt="Paste the EasyAudio snippet in Ghost"
+                  />
+                </div>
+              </div>
+              <div className="ea-install-shot">
+                <div className="ea-install-shot-label">3 Save and test</div>
+                <div className="ea-install-shot-frame">
+                  <img
+                    src="/install/ghost-step-3-listen-button.png"
+                    alt="Listen button visible on a Ghost post"
+                  />
+                </div>
+              </div>
             </div>
             <a href="#pricing" className="ea-plan-cta ea-install-cta">
               Install with Ghost
