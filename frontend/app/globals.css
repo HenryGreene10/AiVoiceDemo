@@ -385,6 +385,21 @@
   font-weight: 700;
 }
 
+.ea-install-media {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 8px;
+}
+
+.ea-install-media img {
+  width: 100%;
+  display: block;
+  border: 1px solid var(--ea-border);
+  border-radius: 12px;
+  background-color: #fffdf8;
+}
+
 .ea-install-cta {
   display: inline-block;
   margin-top: 6px;
@@ -599,5 +614,9 @@
 
   .ea-install-steps {
     padding-left: 18px;
+  }
+
+  .ea-install-media {
+    grid-template-columns: 1fr;
   }
 }

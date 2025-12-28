@@ -181,6 +181,20 @@ export default function Page() {
                 automatically.
               </li>
             </ol>
+            <div className="ea-install-media">
+              <img
+                src="/install/ghost-step-1-code-injection.png"
+                alt="Ghost Admin code injection screen"
+              />
+              <img
+                src="/install/ghost-step-2-paste-snippet.png"
+                alt="Paste the EasyAudio snippet in Ghost"
+              />
+              <img
+                src="/install/ghost-step-3-listen-button.png"
+                alt="Listen button visible on a Ghost post"
+              />
+            </div>
             <a href="#pricing" className="ea-plan-cta ea-install-cta">
               Install with Ghost
             </a>
