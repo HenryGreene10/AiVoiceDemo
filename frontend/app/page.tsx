@@ -1,4 +1,7 @@
 import Script from "next/script"
+import frame4 from "../Frame 4.png"
+import frame5 from "../Frame 5.png"
+import frame6 from "../Frame 6.png"
 
 export default function Page() {
   return (
@@ -168,55 +171,61 @@ export default function Page() {
           </div>
 
           <div className="ea-install-card">
-            <ol className="ea-install-steps">
-              <li>
-                <strong>Checkout and get your snippet.</strong> We email your EasyAudio key right away.
-              </li>
-              <li>
-                <strong>Paste it into Ghost.</strong> In Ghost Admin, go to Settings &gt; Code Injection
-                and paste the snippet.
-              </li>
-              <li>
-                <strong>Publish and listen.</strong> Refresh any post and the Listen button appears
-                automatically.
-              </li>
-            </ol>
-            <div className="ea-install-media">
-              <div className="ea-shot">
-                <div className="ea-shot-label">1 Open Code Injection</div>
-                <div className="ea-shot-frame">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="flex flex-col gap-4">
+                <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
+                  Step 1
+                </div>
+                <p>Checkout and get your snippet. We email your EasyAudio key right away.</p>
+                <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
                   <img
-                    src="/install/ghost-step-1-code-injection.png"
-                    alt="Ghost Admin code injection screen"
+                    src={frame4.src}
+                    alt="Checkout snippet email preview"
+                    className="h-full w-full object-contain"
                   />
                 </div>
               </div>
-              <div className="ea-shot">
-                <div className="ea-shot-label">2 Paste the snippet</div>
-                <div className="ea-shot-frame">
+              <div className="flex flex-col gap-4">
+                <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
+                  Step 2
+                </div>
+                <p>
+                  Paste it into Ghost. In Ghost Admin, go to Settings &gt; Code Injection and paste
+                  the snippet.
+                </p>
+                <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
                   <img
-                    src="/install/ghost-step-2-paste-snippet.png"
-                    alt="Paste the EasyAudio snippet in Ghost"
+                    src={frame5.src}
+                    alt="Paste the snippet in Ghost admin"
+                    className="h-full w-full object-contain"
                   />
                 </div>
               </div>
-              <div className="ea-shot">
-                <div className="ea-shot-label">3 Save and test</div>
-                <div className="ea-shot-frame">
+              <div className="flex flex-col gap-4 md:col-span-2">
+                <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
+                  Step 3
+                </div>
+                <p>
+                  Publish and listen. Refresh any post and the Listen button appears automatically.
+                </p>
+                <div className="flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
                   <img
-                    src="/install/ghost-step-3-listen-button.png"
-                    alt="Listen button visible on a Ghost post"
+                    src={frame6.src}
+                    alt="Listen button appears on a published post"
+                    className="h-full w-full object-contain"
                   />
                 </div>
               </div>
             </div>
-            <a href="#pricing" className="ea-plan-cta ea-install-cta">
-              Install with Ghost
-            </a>
-            <p className="ea-install-note">
-              <strong>Other platforms:</strong> WordPress, Webflow, and custom sites use a similar
-              one-snippet install. If you need help, we&apos;ll guide you.
-            </p>
+            <div className="mt-6 flex flex-col items-center text-center">
+              <a href="#pricing" className="ea-plan-cta ea-install-cta">
+                Install with Ghost
+              </a>
+              <p className="ea-install-note text-center">
+                <strong>Other platforms:</strong> WordPress, Webflow, and custom sites use a similar
+                one-snippet install. If you need help, we&apos;ll guide you.
+              </p>
+            </div>
           </div>
         </section>
 
