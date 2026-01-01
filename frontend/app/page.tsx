@@ -33,7 +33,7 @@ export default function Page() {
       <main className="ea-shell">
         <div className="ea-page-inner">
           {/* HERO */}
-        <section className="ea-hero">
+          <section className="ea-hero">
           <div className="ea-card ea-hero-card">
             <h1 className="ea-hero-title">Turn Any Article Into an Elevated Listening Experience</h1>
             <div className="ea-hero-cta-row">
@@ -79,10 +79,10 @@ export default function Page() {
               </p>
             </div>
           </article>
-        </section>
+          </section>
 
-        {/* PRICING */}
-        <section id="pricing" className="ea-section">
+          {/* PRICING */}
+          <section id="pricing" className="ea-section">
           <div className="ea-pricing-shell">
             <div className="ea-section-header">
               <h2 className="ea-section-title">Simple Pricing for a Simple Player</h2>
@@ -172,63 +172,47 @@ export default function Page() {
 
           <div className="ea-install-card">
             <div className="flex flex-col gap-4">
+
               <div className="grid gap-4 md:grid-cols-2 md:items-start md:gap-6">
+                {/* Step 1 */}
                 <div className="flex flex-col gap-3">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
                     Step 1
                   </div>
                   <p>Checkout and get your snippet. We email your EasyAudio key right away.</p>
                   <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
-                    <img
-                      src={frame4.src}
-                      alt="Checkout snippet email preview"
-                      className="h-full w-full object-contain"
-                    />
+                    <img src={frame4.src} alt="Checkout snippet email preview" className="h-full w-full object-contain" />
                   </div>
                 </div>
+
+                {/* Step 2 */}
                 <div className="flex flex-col gap-3">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
                     Step 2
                   </div>
                   <p>
-                    Paste it into Ghost. In Ghost Admin, go to Settings &gt; Code Injection and paste
-                    the snippet.
+                    Paste it into Ghost. In Ghost Admin, go to Settings &gt; Code Injection and paste the snippet.
                   </p>
                   <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
-                    <img
-                      src={frame5.src}
-                      alt="Paste the snippet in Ghost admin"
-                      className="h-full w-full object-contain"
-                    />
+                    <img src={frame5.src} alt="Paste the snippet in Ghost admin" className="h-full w-full object-contain" />
                   </div>
                 </div>
               </div>
+
+              {/* Step 3 full width */}
               <div className="flex flex-col gap-3">
                 <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
                   Step 3
                 </div>
-                <p>
-                  Publish and listen. Refresh any post and the Listen button appears automatically.
-                </p>
+                <p>"Publish and listen. Refresh any post and the Listen button appears automatically."</p>
                 <div className="flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
-                  <img
-                    src={frame6.src}
-                    alt="Listen button appears on a published post"
-                    className="h-full w-full object-contain"
-                  />
+                  <img src={frame6.src} alt="Listen button appears on a published post" className="h-full w-full object-contain" />
                 </div>
               </div>
-            </div>
-            <div className="mt-4 flex flex-col items-center text-center">
-              <a href="#pricing" className="ea-plan-cta ea-install-cta">
-                Install with Ghost
-              </a>
-              <p className="ea-install-note text-center">
-                <strong>Other platforms:</strong> WordPress, Webflow, and custom sites use a similar
-                one-snippet install. If you need help, we&apos;ll guide you.
-              </p>
+
             </div>
           </div>
+
         </section>
 
         <section className="ea-section">
