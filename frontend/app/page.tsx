@@ -173,7 +173,7 @@ export default function Page() {
           <div className="ea-install-card">
             <div className="flex flex-col gap-4">
 
-              <div className="grid gap-4 md:grid-cols-2 md:items-start md:gap-6">
+              <div className="grid gap-4 sm:grid-cols-2 sm:items-start sm:gap-6">
                 {/* Step 1 */}
                 <div className="flex flex-col gap-3">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
