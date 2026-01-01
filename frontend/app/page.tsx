@@ -171,8 +171,9 @@ export default function Page() {
           </div>
 
           <div className="ea-install-card">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-4 md:grid-cols-2 md:items-start md:gap-6">
+                <div className="flex flex-col gap-3">
                 <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
                   Step 1
                 </div>
@@ -184,8 +185,8 @@ export default function Page() {
                     className="h-full w-full object-contain"
                   />
                 </div>
-              </div>
-              <div className="flex flex-col gap-4">
+                </div>
+                <div className="flex flex-col gap-3">
                 <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
                   Step 2
                 </div>
@@ -200,8 +201,9 @@ export default function Page() {
                     className="h-full w-full object-contain"
                   />
                 </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-4 md:col-span-2">
+              <div className="flex flex-col gap-3">
                 <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
                   Step 3
                 </div>
@@ -217,7 +219,7 @@ export default function Page() {
                 </div>
               </div>
             </div>
-            <div className="mt-6 flex flex-col items-center text-center">
+            <div className="mt-4 flex flex-col items-center text-center">
               <a href="#pricing" className="ea-plan-cta ea-install-cta">
                 Install with Ghost
               </a>
