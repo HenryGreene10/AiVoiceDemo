@@ -145,7 +145,7 @@
   border-radius: 9999px;
   padding: 8px 20px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.08em;
   line-height: 1;
   box-shadow: 0 8px 18px rgba(0,0,0,.2);
@@ -222,7 +222,7 @@
   border-radius: 999px;
   padding: 8px 14px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.08em;
   line-height: 1;
   box-shadow: 0 6px 14px rgba(0,0,0,.2);
