@@ -177,7 +177,7 @@ export default function Page() {
                 {/* Step 1 */}
                 <div className="flex flex-col gap-2">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
-                    Step 1
+                    <strong>Step 1</strong>
                   </div>
                   <p>Checkout and get your snippet. We email your EasyAudio key right away.</p>
                 </div>
@@ -185,7 +185,7 @@ export default function Page() {
                 {/* Step 2 */}
                 <div className="flex flex-col gap-2">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
-                    Step 2
+                    <strong>Step 2</strong>
                   </div>
                   <p>
                     In Ghost Admin, go to Settings &gt; Code Injection and paste your custom code snippet under site header.
@@ -196,7 +196,7 @@ export default function Page() {
               {/* Step 3 full width */}
               <div className="flex flex-col gap-3">
                 <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
-                  Step 3
+                  <strong>Step 3</strong>
                 </div>
                 <p>Hit save. Refresh any post and the listen button will appear automatically.</p>
                 <div className="flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
