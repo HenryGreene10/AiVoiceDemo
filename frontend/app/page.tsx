@@ -174,33 +174,33 @@ export default function Page() {
             <div className="flex flex-col gap-4">
               <div className="grid gap-4 md:grid-cols-2 md:items-start md:gap-6">
                 <div className="flex flex-col gap-3">
-                <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
-                  Step 1
-                </div>
-                <p>Checkout and get your snippet. We email your EasyAudio key right away.</p>
-                <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
-                  <img
-                    src={frame4.src}
-                    alt="Checkout snippet email preview"
-                    className="h-full w-full object-contain"
-                  />
-                </div>
+                  <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
+                    Step 1
+                  </div>
+                  <p>Checkout and get your snippet. We email your EasyAudio key right away.</p>
+                  <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
+                    <img
+                      src={frame4.src}
+                      alt="Checkout snippet email preview"
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
                 </div>
                 <div className="flex flex-col gap-3">
-                <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
-                  Step 2
-                </div>
-                <p>
-                  Paste it into Ghost. In Ghost Admin, go to Settings &gt; Code Injection and paste
-                  the snippet.
-                </p>
-                <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
-                  <img
-                    src={frame5.src}
-                    alt="Paste the snippet in Ghost admin"
-                    className="h-full w-full object-contain"
-                  />
-                </div>
+                  <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
+                    Step 2
+                  </div>
+                  <p>
+                    Paste it into Ghost. In Ghost Admin, go to Settings &gt; Code Injection and paste
+                    the snippet.
+                  </p>
+                  <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
+                    <img
+                      src={frame5.src}
+                      alt="Paste the snippet in Ghost admin"
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="flex flex-col gap-3">
