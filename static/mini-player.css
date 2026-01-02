@@ -142,7 +142,7 @@
   background: #3b2a1c !important;
   color: #fffdf8 !important;
   border: 2px solid #1a1c1a;
-  border-radius: 9999px;
+  border-radius: 999px;
   padding: 8px 20px;
   font-weight: 700;
   text-transform: none;
@@ -152,7 +152,7 @@
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   transition: transform .08s ease, background-color .08s ease, box-shadow .08s ease;
 }
 #ai-listen-btn:hover,
@@ -213,7 +213,6 @@
   margin-left: 12px;             /* spacing from author name */
 }
 
-.listen-btn,
 #ai-fab, .ai-fab, [data-ai-fab], button[aria-label="Listen"]{
   position: static !important;
   background: #3b2a1c !important;

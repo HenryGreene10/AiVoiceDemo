@@ -308,8 +308,9 @@
   font-family: "Courier New", monospace;
   font-weight: 700;
   font-size: 14px;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.08em;
+  line-height: 1;
   border-radius: 999px;
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
