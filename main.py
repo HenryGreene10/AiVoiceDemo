@@ -2348,12 +2348,21 @@ async def stripe_webhook(request: Request):
         stripe_customer_id = full_session.get("customer")
         stripe_subscription_id = full_session.get("subscription")
         stripe_checkout_session_id = full_session.get("id")
-        payment_link_id = full_session.get("payment_link")
         domain_raw = _domain_from_custom_fields(full_session.get("custom_fields"))
         if not domain_raw:
             logger.warning("[stripe] checkout.completed missing domain session=%s", stripe_checkout_session_id)
         normalized_domains = _expand_allowed_domains(domain_raw)
-        tier = _tier_from_payment_link(payment_link_id) or "unknown"
+        metadata = full_session.get("metadata") or {}
+        metadata_keys = sorted(metadata.keys()) if isinstance(metadata, dict) else []
+        raw_plan_tier = metadata.get("plan_tier") if isinstance(metadata, dict) else None
+        tier = (raw_plan_tier or "").strip().lower()
+        if tier not in {"creator", "publisher", "newsroom"}:
+            logger.warning(
+                "[stripe] checkout.completed missing/invalid plan_tier session=%s metadata_keys=%s",
+                stripe_checkout_session_id,
+                metadata_keys,
+            )
+            tier = "unknown"
         pending_review = tier == "unknown"
         quota_seconds_month = quota_for_plan(tier) if not pending_review else None
 
@@ -2362,10 +2371,16 @@ async def stripe_webhook(request: Request):
                 existing_by_session = get_tenant_by_stripe_checkout_session_id(session, stripe_checkout_session_id)
                 if existing_by_session:
                     logger.info("[stripe] checkout session already provisioned session=%s", stripe_checkout_session_id)
-                    if resend_email and existing_by_session.contact_email:
+                    existing_pending_review = (existing_by_session.plan_tier or "") == "unknown"
+                    existing_active = (existing_by_session.status or "").lower() == "active"
+                    if (
+                        resend_email
+                        and existing_by_session.contact_email
+                        and not existing_pending_review
+                        and existing_active
+                    ):
                         existing_domains = _get_allowed_domains(existing_by_session)
                         existing_pending_domain = not existing_domains
-                        existing_pending_review = (existing_by_session.plan_tier or "") == "unknown"
                         emailed = await _send_resend_email(
                             existing_by_session.contact_email,
                             existing_by_session.tenant_key,
@@ -2381,6 +2396,14 @@ async def stripe_webhook(request: Request):
                             stripe_checkout_session_id,
                             emailed,
                         )
+                    logger.info(
+                        "[stripe] checkout completed type=%s session=%s subscription=%s plan_tier=%s activated=%s",
+                        event_type,
+                        stripe_checkout_session_id,
+                        stripe_subscription_id,
+                        tier,
+                        existing_active and not existing_pending_review,
+                    )
                     return JSONResponse({"ok": True})
             tenant = None
             if not tenant and stripe_subscription_id:
@@ -2409,7 +2432,8 @@ async def stripe_webhook(request: Request):
                 quota_seconds_month=quota_seconds_month,
             )
         emailed = False
-        if email_onboarding:
+        activated = tier != "unknown" and status == "active"
+        if email_onboarding and activated:
             emailed = await _send_resend_email(
                 cust_email,
                 tenant_key,
@@ -2419,6 +2443,11 @@ async def stripe_webhook(request: Request):
                 pending_domain=pending_domain,
                 pending_review=pending_review,
             )
+        elif email_onboarding and tier == "unknown":
+            logger.warning(
+                "[stripe] checkout completed plan_tier unknown; skipping email session=%s",
+                stripe_checkout_session_id,
+            )
         logger.info(
             "[provision] tenant=%s plan=%s domain=%s session=%s emailed=%s",
             _redact_key(tenant_key),
@@ -2426,6 +2455,14 @@ async def stripe_webhook(request: Request):
             (normalized_domains[0] if normalized_domains else "missing"),
             stripe_checkout_session_id,
             emailed,
+        )
+        logger.info(
+            "[stripe] checkout completed type=%s session=%s subscription=%s plan_tier=%s activated=%s",
+            event_type,
+            stripe_checkout_session_id,
+            stripe_subscription_id,
+            tier,
+            activated,
         )
     return JSONResponse({"ok": True})
 
