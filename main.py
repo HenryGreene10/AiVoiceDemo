@@ -1105,6 +1105,14 @@ def list_tenants_admin(
     if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    # Cleanup workflow:
+    # curl -s -H "x-admin-secret: $ADMIN_SECRET" "$API/admin/tenants/list" \
+    #   | jq -r '.tenants[].tenant_key' \
+    #   | while read -r key; do
+    #       curl -s -H "x-admin-secret: $ADMIN_SECRET" -H "content-type: application/json" \
+    #         -d "{\"tenant_key\":\"$key\"}" "$API/admin/tenants/delete"
+    #     done
+
     search_term = (search or "").strip().lower()
     with tenant_session() as session:
         query = session.query(Tenant)
@@ -1124,7 +1132,7 @@ def list_tenants_admin(
     for tenant in tenants:
         allowed = _get_allowed_domains(tenant)
         item = {
-            "tenant_key": tenant.tenant_key if full else _redact_key(tenant.tenant_key),
+            "tenant_key": tenant.tenant_key,
             "status": tenant.status,
             "plan_tier": tenant.plan_tier,
             "quota_seconds_month": (
