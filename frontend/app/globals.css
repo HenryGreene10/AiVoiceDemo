@@ -344,6 +344,17 @@
   text-align: left;
 }
 
+.ea-install-frame {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ea-install-frame img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 .ea-install-card p {
   font-size: 16px;
   font-weight: 500;
@@ -634,6 +645,21 @@
 }
 
 @media (max-width: 768px) {
+  .ea-install-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .ea-install-frame {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .ea-install-frame img {
+    width: 100%;
+  }
+
   .ea-install-media {
     grid-template-columns: 1fr;
   }

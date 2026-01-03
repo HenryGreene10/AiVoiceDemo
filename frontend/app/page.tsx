@@ -173,7 +173,7 @@ export default function Page() {
           <div className="ea-install-card">
             <div className="flex flex-col gap-4">
 
-              <div className="grid gap-3 md:grid-cols-2 md:items-start md:gap-6">
+              <div className="ea-install-grid grid gap-3 md:grid-cols-2 md:items-start md:gap-6">
                 {/* Step 1 */}
                 <div className="flex flex-col gap-2">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ea-ink-soft)]">
@@ -199,7 +199,7 @@ export default function Page() {
                   <strong>Step 3</strong>
                 </div>
                 <p>Hit save. Refresh any post and the listen button will appear automatically.</p>
-                <div className="flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
+                <div className="ea-install-frame flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
                   <img src={frame6.src} alt="Listen button appears on a published post" className="h-full w-full object-contain" />
                 </div>
               </div>
