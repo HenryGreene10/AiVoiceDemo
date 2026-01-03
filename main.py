@@ -1023,6 +1023,9 @@ class TenantCreateRequest(BaseModel):
     status: str | None = None
     tenant_key: str | None = None
 
+class TenantDeleteRequest(BaseModel):
+    tenant_key: str | None = None
+
 
 @app.post("/admin/tenants", response_model=None)
 def create_tenant_admin(
@@ -1139,6 +1142,30 @@ def list_tenants_admin(
         results.append(item)
 
     return {"tenants": results}
+
+# Smoke test:
+# curl -s -H "x-admin-secret: $ADMIN_SECRET" -H "content-type: application/json" \
+#   -d '{"tenant_key":"SOME_KEY"}' "$API/admin/tenants/delete"
+@app.post("/admin/tenants/delete")
+def delete_tenant_admin(
+    body: TenantDeleteRequest,
+    x_admin_secret: str | None = Header(default=None),
+):
+    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    tenant_key = (body.tenant_key or "").strip()
+    if not tenant_key:
+        raise HTTPException(status_code=400, detail="tenant_key is required")
+
+    protected_keys = {"tnt_demo"}
+    if tenant_key in protected_keys:
+        raise HTTPException(status_code=403, detail="Tenant key is protected")
+
+    if not delete_tenant(tenant_key):
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    return {"ok": True}
 
 
 @app.get("/admin/tenant")
@@ -2065,6 +2092,25 @@ def _save_tenant_store(data: dict) -> None:
     tmp = TENANT_STORE.with_suffix(".part")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
     tmp.replace(TENANT_STORE)
+
+def delete_tenant(tenant_key: str) -> bool:
+    tenant_key = (tenant_key or "").strip()
+    if not tenant_key:
+        return False
+    store = _load_tenant_store()
+    if not isinstance(store, dict) or not store:
+        return False
+    updated: dict = {}
+    removed = False
+    for email, meta in store.items():
+        if isinstance(meta, dict) and meta.get("tenant_key") == tenant_key:
+            removed = True
+            continue
+        updated[email] = meta
+    if not removed:
+        return False
+    _save_tenant_store(updated)
+    return True
 
 def _load_notify_store() -> dict:
     if not NOTIFY_STORE.exists():
