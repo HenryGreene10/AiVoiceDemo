@@ -1166,12 +1166,17 @@ def delete_tenant_admin(
     if not tenant_key:
         raise HTTPException(status_code=400, detail="tenant_key is required")
 
-    protected_keys = {"tnt_demo"}
+    protected_keys = {"tnt_demo", "tnt_internal_demo", "tnt_internal_ghost"}
     if tenant_key in protected_keys:
         raise HTTPException(status_code=403, detail="Tenant key is protected")
 
-    if not delete_tenant(tenant_key):
-        raise HTTPException(status_code=404, detail="Tenant not found")
+    with tenant_session() as session:
+        tenant = get_tenant(session, tenant_key)
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        session.delete(tenant)
+
+    delete_tenant(tenant_key)
 
     return {"ok": True}
 
