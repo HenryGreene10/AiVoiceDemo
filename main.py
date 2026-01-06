@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from collections import OrderedDict
 from dotenv import load_dotenv; 
-from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse, HTMLResponse
 from typing import Optional, Any, Dict
 from fastapi.middleware.cors import CORSMiddleware
@@ -425,7 +425,6 @@ REQUIRE_DOMAIN_HEADER = os.getenv("REQUIRE_DOMAIN_HEADER", "false").lower() in (
 MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
-ADMIN_KEY = os.getenv("ADMIN_KEY", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
 TENANT_ALLOWLIST_ENFORCE = os.getenv("TENANT_ALLOWLIST_ENFORCE", "0").strip().lower() in ("1","true","yes")
@@ -871,9 +870,8 @@ async def read_chunked(request: Request, url: str, voice: str | None = None, mod
 
 # --- metrics API (admin)
 @app.get("/admin/metrics.json")
-async def metrics_json(n: int = Query(200, ge=1, le=5000), token: str = Query("")):
-    if ADMIN_TOKEN and token != ADMIN_TOKEN:
-        raise HTTPException(403, "Forbidden")
+async def metrics_json(request: Request, n: int = Query(200, ge=1, le=5000)):
+    _require_admin_secret(request)
     file_path = Path("metrics/streams.csv")
     if not file_path.exists():
         return {"rows": []}
@@ -904,15 +902,11 @@ class AnalyticsEvent(BaseModel):
     ts: Optional[int] = None
 
 
-def _valid_admin_token(token: str) -> bool:
-    expected = ADMIN_TOKEN or ADMIN_SECRET
-    if not expected:
-        return False
-    return token == expected
-
-
-def _require_admin_token(token: str) -> None:
-    if not token or not _valid_admin_token(token):
+def _require_admin_secret(request: Request) -> None:
+    if not ADMIN_SECRET:
+        raise HTTPException(status_code=500, detail="ADMIN_SECRET is not configured")
+    provided = (request.headers.get("x-admin-secret") or "").strip()
+    if not provided or provided != ADMIN_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -1001,11 +995,11 @@ def _iter_analytics(since_ts: int, tenant: str | None):
 
 @app.get("/admin/analytics_summary.json")
 def analytics_summary_admin(
-    token: str = Query(...),
+    request: Request,
     days: int = Query(7, ge=1, le=90),
     tenant: Optional[str] = Query(None),
 ):
-    _require_admin_token(token)
+    _require_admin_secret(request)
     now_ms = int(time.time() * 1000)
     since_ts = now_ms - int(days * 86400 * 1000)
     totals = {ev: 0 for ev in ANALYTICS_EVENTS}
@@ -1027,11 +1021,11 @@ def analytics_summary_admin(
 
 @app.get("/admin/analytics.csv")
 def analytics_csv_admin(
-    token: str = Query(...),
+    request: Request,
     days: int = Query(7, ge=1, le=90),
     tenant: Optional[str] = Query(None),
 ):
-    _require_admin_token(token)
+    _require_admin_secret(request)
     now_ms = int(time.time() * 1000)
     since_ts = now_ms - int(days * 86400 * 1000)
     counts: dict[tuple[str, str, str], int] = {}
@@ -1070,11 +1064,9 @@ class TenantVoiceRequest(BaseModel):
 def create_tenant_admin(
     request: Request,
     body: TenantCreateRequest,
-    x_admin_secret: str | None = Header(default=None),
 ):
     """Provision a tenant key with plan + quota. Protected by ADMIN_SECRET."""
-    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     tenant_key = (body.tenant_key or "").strip() or None
     plan = (body.plan_tier or "").strip().lower()
@@ -1135,11 +1127,10 @@ def create_tenant_admin(
 
 @app.post("/admin/tenants/set_voice")
 def set_tenant_voice_admin(
+    request: Request,
     body: TenantVoiceRequest,
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
-    if not ADMIN_KEY or (x_admin_key or "").strip() != ADMIN_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     tenant_key = (body.tenant_key or "").strip()
     if not tenant_key:
@@ -1172,10 +1163,8 @@ def list_tenants_admin(
     limit: int = Query(25, ge=1, le=100),
     search: str | None = Query(None),
     full: int = Query(0, ge=0, le=1),
-    x_admin_secret: str | None = Header(default=None),
 ):
-    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     # Cleanup workflow:
     # curl -s -H "x-admin-secret: $ADMIN_SECRET" "$API/admin/tenants/list" \
@@ -1228,11 +1217,10 @@ def list_tenants_admin(
 #   -d '{"tenant_key":"SOME_KEY"}' "$API/admin/tenants/delete"
 @app.post("/admin/tenants/delete")
 def delete_tenant_admin(
+    request: Request,
     body: TenantDeleteRequest,
-    x_admin_secret: str | None = Header(default=None),
 ):
-    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     tenant_key = (body.tenant_key or "").strip()
     if not tenant_key:
@@ -1257,10 +1245,8 @@ def delete_tenant_admin(
 def tenant_admin(
     request: Request,
     tenant_key: str = Query(...),
-    x_admin_secret: str | None = Header(default=None),
 ):
-    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_key)
@@ -1284,10 +1270,8 @@ def tenant_admin(
 def tenant_debug(
     request: Request,
     tenant_key: str = Query(...),
-    x_admin_secret: str | None = Header(default=None),
 ):
-    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_key)
@@ -1318,10 +1302,8 @@ def tenant_debug(
 def domain_debug(
     request: Request,
     tenant_key: str = Query(...),
-    x_admin_secret: str | None = Header(default=None),
 ):
-    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _require_admin_secret(request)
 
     with tenant_session() as session:
         tenant = get_tenant(session, tenant_key)
