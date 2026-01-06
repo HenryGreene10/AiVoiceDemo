@@ -11,7 +11,6 @@ from dotenv import load_dotenv;
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import Response, StreamingResponse, JSONResponse, FileResponse, PlainTextResponse, HTMLResponse
 from typing import Optional, Any, Dict
-from dataclasses import dataclass
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import Query, Body
@@ -426,6 +425,7 @@ REQUIRE_DOMAIN_HEADER = os.getenv("REQUIRE_DOMAIN_HEADER", "false").lower() in (
 MAX_CHARS = 160000  # ~90 seconds
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
+ADMIN_KEY = os.getenv("ADMIN_KEY", "").strip()
 STUB_TTS = os.getenv("STUB_TTS", "0").strip().lower() in ("1","true","yes")
 OPT_LATENCY = int(os.getenv("OPT_LATENCY", "0").strip())  # was 2; 0 = safest with ElevenLabs
 TENANT_ALLOWLIST_ENFORCE = os.getenv("TENANT_ALLOWLIST_ENFORCE", "0").strip().lower() in ("1","true","yes")
@@ -445,18 +445,18 @@ PAYMENT_LINK_NEWSROOM_ID = os.getenv("PAYMENT_LINK_NEWSROOM_ID", "").strip()
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
-@dataclass
-class TenantConfig:
-    voice_id: str
-    model_id: str | None = None
+def _default_voice_id() -> str:
+    return (VOICE_ID or os.getenv("ELEVENLABS_VOICE", "").strip() or "21m00Tcm4TlvDq8ikWAM").strip()
 
-DEFAULT_TENANT_VOICE = (VOICE_ID or os.getenv("ELEVENLABS_VOICE", "").strip() or "21m00Tcm4TlvDq8ikWAM")
-VOICE_TENANTS: dict[str, TenantConfig] = {
-    "default": TenantConfig(voice_id=DEFAULT_TENANT_VOICE),
-    "demo-blog": TenantConfig(
-        voice_id=os.getenv("DEMO_BLOG_VOICE", DEFAULT_TENANT_VOICE)
-    ),
-}
+def resolve_tenant_voice_id(tenant: Tenant | None) -> str:
+    voice = (getattr(tenant, "voice_id", None) or "").strip()
+    return voice or _default_voice_id()
+
+def _should_retry_default_voice(status_code: int | None, detail: str | None) -> bool:
+    if status_code == 404:
+        return True
+    message = (detail or "").lower()
+    return "voice" in message and ("not found" in message or "voice_id" in message or "voice id" in message)
 
 
 # --- app
@@ -529,6 +529,22 @@ async def tts_bytes(
         detail=f"TTS error. stream {resp.status_code}: {body1}; nonstream {resp2.status_code}: {body2}",
     )
 
+async def tts_bytes_with_fallback(
+    text: str,
+    voice_id: str,
+    model_id: str,
+    tenant_key: str,
+) -> bytes:
+    try:
+        return await tts_bytes(text, voice_id, model_id)
+    except HTTPException as exc:
+        if _should_retry_default_voice(exc.status_code, str(exc.detail)):
+            fallback_voice = _default_voice_id()
+            if fallback_voice and fallback_voice != voice_id:
+                logger.warning("[tenant] voice fallback tenant=%s voice_id=%s", tenant_key, voice_id)
+                return await tts_bytes(text, fallback_voice, model_id)
+        raise
+
 # --- Simple, robust sentence chunker ---
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
@@ -549,7 +565,7 @@ def chunk_by_sentence(s: str, target: int = 1200, hard_max: int = 1600) -> list[
 
 @app.get("/read_chunked")
 async def read_chunked(request: Request, url: str, voice: str | None = None, model: str | None = None):
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     ensure_tenant_quota_ok(tenant_id, request=request)
     # 1) Extract & prepare
     title, author, text = extract_article(url)
@@ -563,14 +579,14 @@ async def read_chunked(request: Request, url: str, voice: str | None = None, mod
     if not parts:
         raise HTTPException(status_code=422, detail="No narratable chunks produced")
 
-    v = voice or VOICE_ID
+    v = resolve_tenant_voice_id(tenant)
     m = model or MODEL_ID
     usage_seconds = estimate_seconds_from_text(narration)
 
     # 2) PREFETCH FIRST CHUNK to avoid 200/0B
     try:
         first_text = enhance_prosody(preprocess_for_tts(parts[0]))
-        first_bytes = await tts_bytes(first_text, v, m)
+        first_bytes = await tts_bytes_with_fallback(first_text, v, m, tenant_id)
         if usage_seconds:
             record_tenant_usage_seconds(tenant_id, usage_seconds)
         print({"event": "chunk_ok", "i": 0, "bytes": len(first_bytes)})
@@ -585,7 +601,7 @@ async def read_chunked(request: Request, url: str, voice: str | None = None, mod
         for i, part in enumerate(parts[1:], start=1):
             try:
                 part_text = enhance_prosody(preprocess_for_tts(part))
-                data = await tts_bytes(part_text, v, m)
+                data = await tts_bytes_with_fallback(part_text, v, m, tenant_id)
                 print({"event": "chunk_ok", "i": i, "bytes": len(data)})
                 yield data
             except Exception as e:
@@ -803,20 +819,21 @@ def chunk_by_sentence(s: str, target: int = 1200, hard_max: int = 1600) -> list[
 
 @app.get("/read_chunked")
 async def read_chunked(request: Request, url: str, voice: str | None = None, model: str | None = None):
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     ensure_tenant_quota_ok(tenant_id, request=request)
     title, author, text = extract_article(url)
     narration = prepare_article(title, author, preprocess_for_tts(text))
     parts = chunk_by_sentence(narration, target=1200, hard_max=1600)
     usage_seconds = estimate_seconds_from_text(narration)
     usage_recorded = False
+    voice_id = resolve_tenant_voice_id(tenant)
 
     async def multi():
         nonlocal usage_recorded
         for i, part in enumerate(parts):
             try:
                 async for b in stream_bytes_for_text_safe(
-                    part, voice or VOICE_ID, model or MODEL_ID
+                    part, voice_id, model or MODEL_ID
                 ):
                     if b:
                         if usage_seconds and not usage_recorded:
@@ -824,6 +841,23 @@ async def read_chunked(request: Request, url: str, voice: str | None = None, mod
                             usage_recorded = True
                         yield b
             except Exception as e:
+                if _should_retry_default_voice(None, str(e)):
+                    fallback_voice = _default_voice_id()
+                    if fallback_voice and fallback_voice != voice_id:
+                        logger.warning("[tenant] voice fallback tenant=%s voice_id=%s", tenant_id, voice_id)
+                        try:
+                            async for b in stream_bytes_for_text_safe(
+                                part, fallback_voice, model or MODEL_ID
+                            ):
+                                if b:
+                                    if usage_seconds and not usage_recorded:
+                                        record_tenant_usage_seconds(tenant_id, usage_seconds)
+                                        usage_recorded = True
+                                    yield b
+                            continue
+                        except Exception as retry_err:
+                            print({"event": "chunk_fail", "i": i, "err": str(retry_err)[:200]})
+                            break
                 # Log, then stop or continue; do NOT raise after streaming started
                 print({"event": "chunk_fail", "i": i, "err": str(e)[:200]})
                 break  # or `continue` to try next part
@@ -1026,6 +1060,11 @@ class TenantCreateRequest(BaseModel):
 class TenantDeleteRequest(BaseModel):
     tenant_key: str | None = None
 
+class TenantVoiceRequest(BaseModel):
+    tenant_key: str | None = None
+    voice_id: str | None = None
+    voice_name: str | None = None
+
 
 @app.post("/admin/tenants", response_model=None)
 def create_tenant_admin(
@@ -1091,6 +1130,39 @@ def create_tenant_admin(
             "embed_snippet": embed_snippet,
         }
 
+    return response
+
+
+@app.post("/admin/tenants/set_voice")
+def set_tenant_voice_admin(
+    body: TenantVoiceRequest,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    if not ADMIN_KEY or (x_admin_key or "").strip() != ADMIN_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    tenant_key = (body.tenant_key or "").strip()
+    if not tenant_key:
+        raise HTTPException(status_code=400, detail="tenant_key is required")
+    voice_id = (body.voice_id or "").strip()
+    if not voice_id:
+        raise HTTPException(status_code=400, detail="voice_id is required")
+
+    voice_name = (body.voice_name or "").strip() if body.voice_name is not None else None
+
+    with tenant_session() as session:
+        tenant = get_tenant(session, tenant_key)
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        tenant.voice_id = voice_id
+        tenant.voice_provider = "elevenlabs"
+        if body.voice_name is not None:
+            tenant.voice_name = voice_name or None
+        tenant.updated_at = datetime.now(timezone.utc)
+
+    response = {"ok": True, "tenant_key": tenant_key, "voice_id": voice_id}
+    if voice_name:
+        response["voice_name"] = voice_name
     return response
 
 
@@ -1346,9 +1418,9 @@ async def tts_get(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     rate_limit_check(request)
-    v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
+    v = resolve_tenant_voice_id(tenant)
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
     return stream_with_cache(
@@ -1375,8 +1447,8 @@ def tts_post(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    tenant_id = get_validated_tenant(request, body=body)
-    v = voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or ""
+    tenant_id, tenant = get_validated_tenant_record(request, body=body)
+    v = resolve_tenant_voice_id(tenant)
     if not v:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
     return stream_with_cache(
@@ -1405,12 +1477,12 @@ async def api_tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(0),
 ):
-    tenant_id = get_validated_tenant(request, body=body)
+    tenant_id, tenant = get_validated_tenant_record(request, body=body)
     rate_limit_check(request, body=body)
     page_url = request.query_params.get("url") or request.headers.get("referer", "") or ""
     referrer = request.headers.get("referer", "") or ""
 
-    v = (voice or os.environ.get("ELEVENLABS_VOICE") or os.environ.get("VOICE_ID") or "").strip()
+    v = resolve_tenant_voice_id(tenant)
     if not v:
         raise HTTPException(400, "Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
 
@@ -1447,7 +1519,7 @@ async def api_tts(
         # Quota check is done right before a new render to avoid burning credits on rejects.
         quota_state = ensure_tenant_quota_ok(tenant_id, request=request)
         try:
-            data = await tts_bytes(text_for_tts, v, (model or MODEL_ID))
+            data = await tts_bytes_with_fallback(text_for_tts, v, (model or MODEL_ID), tenant_id)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
@@ -1504,11 +1576,11 @@ def debug_config():
 @app.get("/read")
 async def read(request: Request, url: str, voice: str | None = None, model: str | None = None):
     # sanity: key/voice present
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     ensure_tenant_quota_ok(tenant_id, request=request)
     if not API_KEY:
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY is missing")
-    v = (voice or VOICE_ID or "").strip()
+    v = resolve_tenant_voice_id(tenant)
     if not v:
         raise HTTPException(status_code=400, detail="voice id is required (dataset.voice or VOICE_ID)")
 
@@ -1530,7 +1602,7 @@ async def read(request: Request, url: str, voice: str | None = None, model: str 
     for i, part in enumerate(parts):
         try:
             processed_part = enhance_prosody(preprocess_for_tts(part))
-            audio = await tts_bytes(processed_part, v, m)
+            audio = await tts_bytes_with_fallback(processed_part, v, m, tenant_id)
             bufs.append(audio)
             print({"event":"read_part_ok","i":i,"bytes":len(audio)})
         except Exception as e:
@@ -1571,8 +1643,15 @@ def is_public_http_url(u:str)->bool:
         return True
     except: return False
 
-async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str = MODEL_ID,
-                              voice_settings: dict | None = None, tone: str = "neutral"):
+async def stream_tts_for_text(
+    text: str,
+    voice_id: str = VOICE_ID,
+    model_id: str = MODEL_ID,
+    voice_settings: dict | None = None,
+    tone: str = "neutral",
+    tenant_key: str | None = None,
+    allow_fallback: bool = True,
+):
     if STUB_TTS:
         # Always serve a local file for demos
         from fastapi.responses import FileResponse
@@ -1611,9 +1690,23 @@ async def stream_tts_for_text(text: str, voice_id: str = VOICE_ID, model_id: str
     if resp.status_code != 200:
         err = await resp.aread()
         await resp.aclose()
+        err_text = err.decode("utf-8", "ignore")
+        if allow_fallback and tenant_key and _should_retry_default_voice(resp.status_code, err_text):
+            fallback_voice = _default_voice_id()
+            if fallback_voice and fallback_voice != voice_id:
+                logger.warning("[tenant] voice fallback tenant=%s voice_id=%s", tenant_key, voice_id)
+                return await stream_tts_for_text(
+                    text,
+                    voice_id=fallback_voice,
+                    model_id=model_id,
+                    voice_settings=voice_settings,
+                    tone=tone,
+                    tenant_key=tenant_key,
+                    allow_fallback=False,
+                )
         # Surface as a real error (not empty 200)
         # You can also: return PlainTextResponse(err, status_code=resp.status_code)
-        raise HTTPException(status_code=502, detail=(err.decode("utf-8", "ignore")[:300] or "TTS upstream error"))
+        raise HTTPException(status_code=502, detail=(err_text[:300] or "TTS upstream error"))
 
     async def gen():
         nonlocal first_chunk_time, total_bytes
@@ -1706,10 +1799,18 @@ def enforce_cache_budget(max_bytes=MAX_CACHE_BYTES, max_files=MAX_CACHE_FILES):
             pass
     return {"evicted": evicted, "bytes_freed": removed_bytes}
 
-def stream_with_cache(text: str, voice: str, model: str,
-                      stability: float, similarity: float, style: float,
-                      speaker_boost: bool, opt_latency: int,
-                      tenant_id: str | None = None):
+def stream_with_cache(
+    text: str,
+    voice: str,
+    model: str,
+    stability: float,
+    similarity: float,
+    style: float,
+    speaker_boost: bool,
+    opt_latency: int,
+    tenant_id: str | None = None,
+    allow_fallback: bool = True,
+):
     """
     Streams TTS audio from ElevenLabs, with:
       - preflight status check (no streaming starts if upstream is an error)
@@ -1764,6 +1865,29 @@ def stream_with_cache(text: str, voice: str, model: str,
     if r.status_code in (401, 402, 429):
         metrics["tts_errors"] += 1
         raise HTTPException(status_code=429, detail=f"Upstream TTS error {r.status_code}. Check key/credits/limits.")
+    if r.status_code != 200:
+        body = ""
+        try:
+            body = r.text or ""
+        except Exception:
+            body = ""
+        if allow_fallback and tenant_id and _should_retry_default_voice(r.status_code, body):
+            fallback_voice = _default_voice_id()
+            if fallback_voice and fallback_voice != voice:
+                logger.warning("[tenant] voice fallback tenant=%s voice_id=%s", tenant_id, voice)
+                r.close()
+                return stream_with_cache(
+                    text,
+                    fallback_voice,
+                    model,
+                    stability,
+                    similarity,
+                    style,
+                    speaker_boost,
+                    opt_latency,
+                    tenant_id=tenant_id,
+                    allow_fallback=False,
+                )
     try:
         r.raise_for_status()
     except Exception as e:
@@ -1937,7 +2061,7 @@ async def ensure_article_cached(
             extra={"hash": hash_value, "mp3_path": str(mp3_path), "tenant": tenant_id},
         )
         try:
-            data = await tts_bytes(tts_ready, voice_id, model_id)
+            data = await tts_bytes_with_fallback(tts_ready, voice_id, model_id, tenant_id)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Provider error: {e}")
 
@@ -1958,10 +2082,18 @@ async def ensure_article_cached(
         return mp3_path
 
 # Reuse your synth function used by /api/tts, e.g. synth_to_file(text, voice, out_path)
-async def elevenlabs_tts_to_file(text: str, voice: str, out_path: Path) -> str:
+async def elevenlabs_tts_to_file(
+    text: str,
+    voice: str,
+    out_path: Path,
+    tenant_key: str | None = None,
+) -> str:
     """Synthesize text to speech and save to file, returns the URL path"""
     try:
-        data = await tts_bytes(text, voice, MODEL_ID)
+        if tenant_key:
+            data = await tts_bytes_with_fallback(text, voice, MODEL_ID, tenant_key)
+        else:
+            data = await tts_bytes(text, voice, MODEL_ID)
         with open(out_path, "wb") as f:
             f.write(data)
         return f"/cache/{out_path.name}"
@@ -1976,8 +2108,8 @@ _precache_lock = Lock()
 
 @app.post("/precache_text")
 async def precache_text(req: PrecacheReq, request: Request):
-    tenant_id = get_validated_tenant(request, body=req)
-    voice = req.voice or os.getenv("VOICE_ID", "")
+    tenant_id, tenant = get_validated_tenant_record(request, body=req)
+    voice = resolve_tenant_voice_id(tenant)
     if not req.text.strip():
         raise HTTPException(400, "text required")
     prepared = enhance_prosody(preprocess_for_tts(req.text))
@@ -1988,7 +2120,7 @@ async def precache_text(req: PrecacheReq, request: Request):
     with _precache_lock:
         if not outp.exists():
             ensure_tenant_quota_ok(tenant_id, request=request)
-            await elevenlabs_tts_to_file(prepared, voice, outp)
+            await elevenlabs_tts_to_file(prepared, voice, outp, tenant_key=tenant_id)
             created = True
             duration = mp3_duration_seconds(outp)
             if not duration:
@@ -2520,7 +2652,7 @@ def tenants_stats():
 # --- TTS request (streaming via shared function)
 @app.post("/tts")
 async def tts(req: TTSRequest, request: Request):
-    tenant_id = get_validated_tenant(request, body=req)
+    tenant_id, tenant = get_validated_tenant_record(request, body=req)
     guard_request(request)
     sample_text = (
         "This is a short sample paragraph to verify streaming text to speech. "
@@ -2529,7 +2661,7 @@ async def tts(req: TTSRequest, request: Request):
     text = (getattr(req, "text", "") or "").strip() or sample_text
     return stream_with_cache(
         text,
-        VOICE_ID,
+        resolve_tenant_voice_id(tenant),
         MODEL_ID,
         0.35,
         0.75,
@@ -2552,8 +2684,8 @@ def tts(
     speaker_boost: bool = Query(True),
     opt_latency: int = Query(2),
 ):
-    tenant_id = get_validated_tenant(request)
-    voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
+    tenant_id, tenant = get_validated_tenant_record(request)
+    voice = resolve_tenant_voice_id(tenant)
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE not set).")
     return stream_with_cache(
@@ -2724,7 +2856,6 @@ class ArticleAudioRequest(BaseModel):
 @app.post("/api/article-audio")
 async def article_audio(req: ArticleAudioRequest, request: Request):
     tenant_id, tenant = get_validated_tenant_record(request, body=req)
-    tenant_cfg = VOICE_TENANTS.get(tenant_id) or VOICE_TENANTS.get("default")
 
     raw_text = (req.text or "").strip()
 
@@ -2748,15 +2879,10 @@ async def article_audio(req: ArticleAudioRequest, request: Request):
             tenant_id,
         )
 
-    voice_id = (
-        (tenant_cfg.voice_id if tenant_cfg else "")
-        or os.environ.get("ELEVENLABS_VOICE")
-        or os.environ.get("VOICE_ID")
-        or ""
-    ).strip()
+    voice_id = resolve_tenant_voice_id(tenant)
     if not voice_id:
         raise HTTPException(status_code=400, detail="Voice not provided (and ELEVENLABS_VOICE/VOICE_ID not set).")
-    model_id = (tenant_cfg.model_id if tenant_cfg and tenant_cfg.model_id else MODEL_ID).strip()
+    model_id = MODEL_ID.strip()
 
     hash_value = compute_article_hash(tenant_id, canonical, voice_id, model_id)
     mp3_path = article_mp3_path(hash_value)
@@ -2804,7 +2930,7 @@ class ReadRequest(BaseModel):
 # ---- READ: fetch article → extract → prosody → stream (cached) ----
 @app.post("/read")
 async def read(req: ReadRequest, request: Request):
-    tenant_id = get_validated_tenant(request, body=req)
+    tenant_id, tenant = get_validated_tenant_record(request, body=req)
     ensure_tenant_quota_ok(tenant_id, request=request)
     guard_request(request)
     if not (req.text or req.url):
@@ -2843,14 +2969,21 @@ async def read(req: ReadRequest, request: Request):
         text = text[:MAX_CHARS]
     # Use the shared cached streamer (disk + memory). This saves credits.
     usage_seconds = estimate_seconds_from_text(text)
-    resp = await stream_tts_for_text(text, voice_id=VOICE_ID, model_id=MODEL_ID, voice_settings=voice_settings, tone=tone)
+    resp = await stream_tts_for_text(
+        text,
+        voice_id=resolve_tenant_voice_id(tenant),
+        model_id=MODEL_ID,
+        voice_settings=voice_settings,
+        tone=tone,
+        tenant_key=tenant_id,
+    )
     if usage_seconds:
         record_tenant_usage_seconds(tenant_id, usage_seconds)
     return resp
 
 @app.get("/read")
 async def read(request: Request, url: str, voice: str | None = None, model: str | None = None):
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     ensure_tenant_quota_ok(tenant_id, request=request)
     title, author, text = extract_article(url)
     narration = prepare_article(title, author, text)
@@ -2858,8 +2991,9 @@ async def read(request: Request, url: str, voice: str | None = None, model: str 
     usage_seconds = estimate_seconds_from_text(narration)
     resp = await stream_tts_for_text(
         narration,
-        voice_id=voice or VOICE_ID,
+        voice_id=resolve_tenant_voice_id(tenant),
         model_id=model or MODEL_ID,
+        tenant_key=tenant_id,
     )
     if usage_seconds:
         record_tenant_usage_seconds(tenant_id, usage_seconds)
@@ -2867,7 +3001,7 @@ async def read(request: Request, url: str, voice: str | None = None, model: str 
 
 @app.get("/read_chunked")
 async def read_chunked(request: Request, url: str, voice: str | None = None, model: str | None = None):
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     ensure_tenant_quota_ok(tenant_id, request=request)
     # 1) Extract & prepare
     title, author, text = extract_article(url)
@@ -2888,7 +3022,12 @@ async def read_chunked(request: Request, url: str, voice: str | None = None, mod
         for i, part in enumerate(parts):
             try:
                 processed_part = enhance_prosody(preprocess_for_tts(part))
-                data = await tts_bytes(processed_part, voice or VOICE_ID, model or MODEL_ID)
+                data = await tts_bytes_with_fallback(
+                    processed_part,
+                    resolve_tenant_voice_id(tenant),
+                    model or MODEL_ID,
+                    tenant_id,
+                )
                 if usage_seconds and not usage_recorded:
                     record_tenant_usage_seconds(tenant_id, usage_seconds)
                     usage_recorded = True
@@ -2937,9 +3076,9 @@ def tts_full(
     style: float = Query(0.40),
     speaker_boost: bool = Query(True),
 ):
-    tenant_id = get_validated_tenant(request)
+    tenant_id, tenant = get_validated_tenant_record(request)
     ensure_tenant_quota_ok(tenant_id, request=request)
-    voice = voice or os.environ.get("ELEVENLABS_VOICE", "")
+    voice = resolve_tenant_voice_id(tenant)
     if not voice:
         raise HTTPException(status_code=400, detail="Voice not provided.")
     clean = preprocess_for_tts(text)
@@ -2962,7 +3101,14 @@ def tts_full(
     }
     r = http.post(url, headers=headers, json=payload, timeout=60)
     if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text)
+        if _should_retry_default_voice(r.status_code, r.text):
+            fallback_voice = _default_voice_id()
+            if fallback_voice and fallback_voice != voice:
+                logger.warning("[tenant] voice fallback tenant=%s voice_id=%s", tenant_id, voice)
+                url = f"https://api.elevenlabs.io/v1/text-to-speech/{fallback_voice}"
+                r = http.post(url, headers=headers, json=payload, timeout=60)
+        if r.status_code >= 400:
+            raise HTTPException(status_code=r.status_code, detail=r.text)
     if usage_seconds:
         record_tenant_usage_seconds(tenant_id, usage_seconds)
     return Response(content=r.content, media_type="audio/mpeg")

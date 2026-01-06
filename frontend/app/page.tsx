@@ -2,6 +2,7 @@ import Script from "next/script"
 import frame4 from "../Frame 4.png"
 import frame5 from "../Frame 5.png"
 import frame6 from "../Frame 6.png"
+import ghostEasyAudio from "../GhostEasyAudio.png"
 
 export default function Page() {
   return (
@@ -201,6 +202,9 @@ export default function Page() {
                 <p>Hit save. Refresh any post and the listen button will appear automatically.</p>
                 <div className="ea-install-frame flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
                   <img src={frame6.src} alt="Listen button appears on a published post" className="h-full w-full object-contain" />
+                </div>
+                <div className="ea-install-frame flex aspect-[16/9] items-center justify-center rounded-xl border border-[var(--ea-border)] bg-[var(--ea-card)] p-4">
+                  <img src={ghostEasyAudio.src} alt="EasyAudio on Ghost editor" className="h-full w-full object-contain" />
                 </div>
               </div>
 

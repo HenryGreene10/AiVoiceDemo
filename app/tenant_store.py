@@ -83,6 +83,9 @@ class Tenant(Base):
     stripe_subscription_id = Column(String, nullable=True)
     stripe_checkout_session_id = Column(String, nullable=True)
     quota_seconds_month = Column(Integer, nullable=True)
+    voice_id = Column(String, nullable=True)
+    voice_name = Column(String, nullable=True)
+    voice_provider = Column(String, nullable=True, default="elevenlabs")
 
     @property
     def public_site_key(self) -> str:
@@ -126,6 +129,9 @@ def _ensure_columns() -> None:
         "stripe_subscription_id": "TEXT",
         "stripe_checkout_session_id": "TEXT",
         "quota_seconds_month": "INTEGER",
+        "voice_id": "TEXT",
+        "voice_name": "TEXT",
+        "voice_provider": "TEXT",
     }
     to_add = {name: sql_type for name, sql_type in missing.items() if name not in existing}
     if not to_add:
