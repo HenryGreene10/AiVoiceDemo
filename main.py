@@ -289,15 +289,33 @@ def enforce_article_length_limit(tenant_id: str, text: str) -> tuple[str, bool]:
     return truncated, True
 
 
-def _quota_error_payload(plan: str, quota: int, used: int) -> dict[str, object]:
-    plan_name = (plan or "trial")
-    return {
+def _quota_error_payload(
+    plan: str,
+    quota: int,
+    used: int,
+    renewal_at: datetime | None = None,
+) -> dict[str, object]:
+    plan_name = (plan or "paid").strip().lower() or "paid"
+    quota_reason = "trial" if plan_name == "trial" else "paid"
+    remaining = max(0, int(quota) - int(used))
+    if quota_reason == "trial":
+        message = "Trial limit reached."
+    else:
+        message = f"Monthly limit reached for the {plan_name} plan."
+    upgrade_url = UPGRADE_URL or ""
+    payload = {
         "error": "quota_exceeded",
-        "message": f"Monthly quota reached for the {plan_name} plan.",
+        "message": message,
         "plan": plan_name,
+        "quota_state": "limit_reached",
+        "quota_reason": quota_reason,
         "limit_seconds": int(quota),
         "used_seconds": int(used),
+        "remaining_seconds": remaining,
+        "renewal_at": renewal_at.isoformat() if renewal_at else None,
+        "upgrade_url": upgrade_url,
     }
+    return payload
 
 
 def ensure_tenant_quota_ok(tenant_id: str, request: Request | None = None) -> dict[str, object]:
@@ -314,7 +332,12 @@ def ensure_tenant_quota_ok(tenant_id: str, request: Request | None = None) -> di
         refresh_renewal(session, tenant)
         quota = int(tenant.quota_seconds_month or 0) if tenant.quota_seconds_month else quota_for_plan(tenant.plan_tier)
         if tenant.used_seconds_month >= quota:
-            payload = _quota_error_payload(tenant.plan_tier, quota, tenant.used_seconds_month)
+            payload = _quota_error_payload(
+                tenant.plan_tier,
+                quota,
+                tenant.used_seconds_month,
+                renewal_at=tenant.renewal_at,
+            )
             try:
                 _maybe_send_quota_email(tenant, quota, request=request)
             except Exception as e:
@@ -441,6 +464,7 @@ PRICE_NEWSROOM_ID = os.getenv("PRICE_NEWSROOM_ID", "").strip()
 PAYMENT_LINK_CREATOR_ID = os.getenv("PAYMENT_LINK_CREATOR_ID", "").strip()
 PAYMENT_LINK_PUBLISHER_ID = os.getenv("PAYMENT_LINK_PUBLISHER_ID", "").strip()
 PAYMENT_LINK_NEWSROOM_ID = os.getenv("PAYMENT_LINK_NEWSROOM_ID", "").strip()
+UPGRADE_URL = os.getenv("UPGRADE_URL", "").strip()
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 

@@ -275,20 +275,164 @@
   }
   window.__AIL_applyWidgetTheme = applyWidgetTheme;
 
+  // --- quota UI ---
+  let eaQuotaModal = null;
+  let eaQuotaKeyHandlerBound = false;
+
+  function ensureQuotaStyles() {
+    if (document.getElementById("ea-quota-style")) return;
+    const style = document.createElement("style");
+    style.id = "ea-quota-style";
+    style.textContent = `
+      .ea-hidden{display:none !important;}
+      .ea-quota-overlay{
+        position:fixed; inset:0; z-index:2147483646;
+        display:flex; align-items:center; justify-content:center;
+        background:rgba(0,0,0,0.45); padding:16px;
+      }
+      .ea-quota-modal{
+        width:100%; max-width:420px; background:#ffffff; color:#111111;
+        border-radius:12px; box-shadow:0 18px 50px rgba(0,0,0,0.25);
+        padding:20px 20px 16px; position:relative;
+        font-family:inherit;
+      }
+      .ea-quota-modal *{box-sizing:border-box;}
+      .ea-quota-title{margin:0 32px 10px 0; font-size:18px; line-height:1.3;}
+      .ea-quota-body{margin:0 0 16px; font-size:14px; line-height:1.5;}
+      .ea-quota-actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+      .ea-quota-upgrade{
+        display:inline-flex; align-items:center; justify-content:center;
+        padding:8px 14px; border-radius:999px; text-decoration:none;
+        background:#111111; color:#ffffff; font-size:13px; font-weight:600;
+      }
+      .ea-quota-dismiss{
+        appearance:none; border:1px solid rgba(0,0,0,0.15);
+        background:#ffffff; color:#111111; border-radius:999px;
+        padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer;
+      }
+      .ea-quota-close{
+        position:absolute; top:10px; right:10px; width:28px; height:28px;
+        border-radius:50%; border:none; background:rgba(0,0,0,0.06);
+        color:#111111; font-size:18px; line-height:1; cursor:pointer;
+      }
+      .ea-quota-meta{margin-top:10px; font-size:12px; color:#55606f;}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureQuotaModal() {
+    if (eaQuotaModal) return eaQuotaModal;
+    ensureQuotaStyles();
+    const overlay = document.createElement("div");
+    overlay.id = "ea-quota-overlay";
+    overlay.className = "ea-quota-overlay ea-hidden";
+    overlay.innerHTML = `
+      <div class="ea-quota-modal" role="dialog" aria-modal="true" aria-labelledby="ea-quota-title">
+        <button class="ea-quota-close" aria-label="Close">x</button>
+        <h3 class="ea-quota-title" id="ea-quota-title"></h3>
+        <p class="ea-quota-body"></p>
+        <div class="ea-quota-actions">
+          <a class="ea-quota-upgrade" target="_blank" rel="noopener">Upgrade</a>
+          <button class="ea-quota-dismiss" type="button">Close</button>
+        </div>
+        <div class="ea-quota-meta"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    function close() {
+      overlay.classList.add("ea-hidden");
+    }
+
+    overlay.querySelector(".ea-quota-close").addEventListener("click", close);
+    overlay.querySelector(".ea-quota-dismiss").addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    if (!eaQuotaKeyHandlerBound) {
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") close();
+      });
+      eaQuotaKeyHandlerBound = true;
+    }
+
+    eaQuotaModal = overlay;
+    return overlay;
+  }
+
+  function formatRenewal(renewalAt) {
+    if (!renewalAt) return "";
+    const ts = typeof renewalAt === "number" ? renewalAt * 1000 : renewalAt;
+    const date = new Date(ts);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString();
+  }
+
+  function showQuotaModal(payload) {
+    const data = payload && typeof payload === "object" ? payload : {};
+    const modal = ensureQuotaModal();
+    const title = modal.querySelector(".ea-quota-title");
+    const body = modal.querySelector(".ea-quota-body");
+    const upgrade = modal.querySelector(".ea-quota-upgrade");
+    const meta = modal.querySelector(".ea-quota-meta");
+
+    const plan = String(data.plan || "").toLowerCase();
+    const reason = String(data.quota_reason || (plan === "trial" ? "trial" : "paid")).toLowerCase();
+    title.textContent = reason === "trial" ? "Trial limit reached" : "Monthly limit reached";
+    body.textContent =
+      "You can keep listening to previously generated articles. Upgrade to unlock audio across your entire site.";
+
+    const upgradeUrl = String(data.upgrade_url || "").trim();
+    if (upgradeUrl) {
+      upgrade.href = upgradeUrl;
+      upgrade.style.display = "inline-flex";
+    } else {
+      upgrade.removeAttribute("href");
+      upgrade.style.display = "none";
+    }
+
+    const renewalLabel = formatRenewal(data.renewal_at);
+    meta.textContent = renewalLabel ? `Resets ${renewalLabel}` : "";
+    modal.classList.remove("ea-hidden");
+  }
+
   // --- API call ---
-  async function articleAudioUrl(payload) {
+  async function articleAudioUrl(payload, runtimeConfig) {
     // Base URL for the backend, from config or fallback to window location
-    const apiBase = (AIL_CONFIG && AIL_CONFIG.apiBase) || window.location.origin;
+    const apiBase =
+      (runtimeConfig && runtimeConfig.apiBase) ||
+      (AIL_CONFIG && AIL_CONFIG.apiBase) ||
+      window.location.origin;
     const baseNoSlash = apiBase.replace(/\/+$/, "");
 
     const resp = await fetch(baseNoSlash + "/api/article-audio", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-tenant-key": AIL_CONFIG && AIL_CONFIG.tenant ? AIL_CONFIG.tenant : "default",
+        "x-tenant-key":
+          (runtimeConfig && runtimeConfig.tenant) ||
+          (AIL_CONFIG && AIL_CONFIG.tenant) ||
+          "default",
       },
       body: JSON.stringify(payload || {}),
     });
+
+    if (resp.status === 402) {
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch {
+        data = { message: "Monthly limit reached." };
+      }
+      showQuotaModal(data);
+      return {
+        url: null,
+        cached: false,
+        hash: null,
+        quotaBlocked: true,
+        quota: data,
+      };
+    }
 
     if (!resp.ok) {
       let msg = "";
@@ -319,6 +463,7 @@
       url: objectUrl,
       cached,
       hash,
+      quotaBlocked: false,
     };
   }
   
@@ -702,7 +847,14 @@ function findArticleRoot() {
               text: spoken
             };
 
-          const { url } = await articleAudioUrl(payload, runtimeConfig);
+            const result = await articleAudioUrl(payload, runtimeConfig);
+            if (result && result.quotaBlocked) {
+              return;
+            }
+            const url = result && result.url;
+            if (!url) {
+              throw new Error("Audio URL missing");
+            }
 
             console.log("[AIL] Listen mini-player play");
             if (!window.AiMini?.open) {
@@ -719,9 +871,6 @@ function findArticleRoot() {
             try { window.AIL_bindTimebar && window.AIL_bindTimebar(); } catch {}
           } catch (e) {
             console.error("[AIL] Listen click failed:", e);
-            try {
-              window.AiMini?.error?.("Playback error");
-            } catch {}
           }
         });
       }
